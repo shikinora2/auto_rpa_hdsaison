@@ -1,0 +1,34 @@
+# File cấu hình chứa thông tin đăng nhập - KHÔNG đẩy lên Git
+config.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Downloads - File tải về từ RPA
+downloads_contracts/
+
+# Excel exports
+*.xlsx
+!template*.xlsx
+
+# Playwright browsers
+.playwright/
+
+# OS
+.DS_Store
+Thumbs.db
