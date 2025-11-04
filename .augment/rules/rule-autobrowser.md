@@ -4,7 +4,7 @@ description: "Example description"
 ---
 
 Luôn luôn trả lời bằng TIẾNG VIỆT
-Không tạo thêm file Test
+Không tạo thêm file Test,file MD
 1. Rules Tự động (Applied Automatically)
 Đây là các nguyên tắc cốt lõi mà Agent phải luôn tuân thủ trong mọi cuộc hội thoại liên quan đến tự động hóa trình duyệt.
 
