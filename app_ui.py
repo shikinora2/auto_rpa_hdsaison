@@ -91,8 +91,8 @@ class App(customtkinter.CTk):
         self.login_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         
         self.login_title = customtkinter.CTkLabel(
-            self.login_frame, 
-            text="🔐 ĐĂNG NHẬP HỆ THỐNG", 
+            self.login_frame,
+            text="ĐĂNG NHẬP HỆ THỐNG",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         self.login_title.pack(pady=(10, 8), padx=10)
@@ -149,8 +149,8 @@ class App(customtkinter.CTk):
 
         # === PHẦN LOG TRẠNG THÁI ===
         self.log_label = customtkinter.CTkLabel(
-            home_tab, 
-            text="📋 TRẠNG THÁI HỆ THỐNG", 
+            home_tab,
+            text="TRẠNG THÁI HỆ THỐNG",
             font=customtkinter.CTkFont(weight="bold", size=13)
         )
         self.log_label.grid(row=1, column=0, sticky="w", padx=10, pady=(10, 5))
@@ -172,8 +172,8 @@ class App(customtkinter.CTk):
         self.date_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         
         self.date_title = customtkinter.CTkLabel(
-            self.date_frame, 
-            text="📅 BỘ LỌC NGÀY", 
+            self.date_frame,
+            text="BỘ LỌC NGÀY",
             font=customtkinter.CTkFont(weight="bold", size=13)
         )
         self.date_title.pack(pady=(10, 5))
@@ -289,10 +289,10 @@ class App(customtkinter.CTk):
         self.folder_entry.pack(side="left", fill="x", expand=True, padx=3)
         
         self.folder_button = customtkinter.CTkButton(
-            folder_container, 
-            text="📁 Chọn", 
-            command=self.select_folder, 
-            width=70, 
+            folder_container,
+            text="Chọn",
+            command=self.select_folder,
+            width=70,
             height=30,
             font=customtkinter.CTkFont(size=10)
         )
@@ -342,10 +342,10 @@ class App(customtkinter.CTk):
         
         # Hàng 1
         self.check_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="🔍 Kiểm tra số lượng", 
-            command=self.start_check_thread, 
-            fg_color="#00695C", 
+            rpa_buttons,
+            text="Kiểm tra số lượng",
+            command=self.start_check_thread,
+            fg_color="#00695C",
             hover_color="#004D40",
             height=36,
             font=customtkinter.CTkFont(size=11)
@@ -353,8 +353,8 @@ class App(customtkinter.CTk):
         self.check_button.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
         
         self.start_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="⬇️ Tải File (PDF)", 
+            rpa_buttons,
+            text="Tải File (PDF)",
             command=self.start_rpa_thread,
             height=36,
             font=customtkinter.CTkFont(size=11)
@@ -363,8 +363,8 @@ class App(customtkinter.CTk):
         
         # Hàng 2
         self.scrape_details_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="📊 Lấy Chi Tiết (Excel)", 
+            rpa_buttons,
+            text="Lấy Chi Tiết (Excel)",
             command=self.start_detail_scrape_thread,
             fg_color="#004D40",
             hover_color="#00695C",
@@ -374,8 +374,8 @@ class App(customtkinter.CTk):
         self.scrape_details_button.grid(row=1, column=0, padx=4, pady=4, sticky="ew")
         
         self.open_excel_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="📂 Mở Thư Mục Excel", 
+            rpa_buttons,
+            text="Mở Thư Mục Excel",
             command=self.open_excel_folder,
             fg_color="#1565C0",
             hover_color="#0D47A1",
@@ -386,11 +386,11 @@ class App(customtkinter.CTk):
         
         # Hàng 3 - Điều khiển
         self.pause_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="⏸️ Tạm Dừng", 
-            command=self.toggle_pause, 
-            state="disabled", 
-            fg_color="gray", 
+            rpa_buttons,
+            text="Tạm Dừng",
+            command=self.toggle_pause,
+            state="disabled",
+            fg_color="gray",
             text_color_disabled="white",
             height=32,
             font=customtkinter.CTkFont(size=10)
@@ -398,11 +398,11 @@ class App(customtkinter.CTk):
         self.pause_button.grid(row=2, column=0, padx=4, pady=4, sticky="ew")
 
         self.stop_button = customtkinter.CTkButton(
-            rpa_buttons, 
-            text="⏹️ Kết Thúc (RPA)", 
-            command=self.stop_rpa, 
-            state="disabled", 
-            fg_color="#D32F2F", 
+            rpa_buttons,
+            text="Kết Thúc (RPA)",
+            command=self.stop_rpa,
+            state="disabled",
+            fg_color="#D32F2F",
             hover_color="#B71C1C",
             height=32,
             font=customtkinter.CTkFont(size=10)
@@ -414,15 +414,15 @@ class App(customtkinter.CTk):
         self.local_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
         
         self.local_label = customtkinter.CTkLabel(
-            self.local_frame, 
-            text="💾 TÁC VỤ XỬ LÝ FILE (OFFLINE)", 
+            self.local_frame,
+            text="TÁC VỤ XỬ LÝ FILE (OFFLINE)",
             font=customtkinter.CTkFont(weight="bold", size=12)
         )
         self.local_label.pack(pady=(10, 8))
         
         self.extract_button = customtkinter.CTkButton(
-            self.local_frame, 
-            text="📄 Trích xuất File (PDF/JSON) sang Excel", 
+            self.local_frame,
+            text="Trích xuất File (PDF/JSON) sang Excel",
             command=self.start_extraction_thread,
             fg_color="#4E342E",
             hover_color="#6D4C41",
@@ -438,7 +438,7 @@ class App(customtkinter.CTk):
         # === TIÊU ĐỀ ===
         zalo_title = customtkinter.CTkLabel(
             zalo_tab,
-            text="💬 TỰ ĐỘNG HÓA ZALO",
+            text="TỰ ĐỘNG HÓA ZALO",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         zalo_title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
@@ -456,7 +456,7 @@ class App(customtkinter.CTk):
 
         account_title = customtkinter.CTkLabel(
             account_frame,
-            text="📱 Quản Lý Tài Khoản Zalo",
+            text="Quản Lý Tài Khoản Zalo",
             font=customtkinter.CTkFont(weight="bold", size=12)
         )
         account_title.grid(row=0, column=0, columnspan=6, pady=(10, 8), padx=10, sticky="w")
@@ -476,14 +476,14 @@ class App(customtkinter.CTk):
 
         # Nút thêm tài khoản
         add_account_btn = customtkinter.CTkButton(
-            account_frame, text="➕", width=30, height=28,
+            account_frame, text="+", width=30, height=28,
             command=self.add_zalo_account, font=customtkinter.CTkFont(size=14)
         )
         add_account_btn.grid(row=1, column=2, padx=5, pady=5)
 
         # Nút xóa tài khoản
         delete_account_btn = customtkinter.CTkButton(
-            account_frame, text="🗑️", width=30, height=28,
+            account_frame, text="X", width=30, height=28,
             command=self.delete_zalo_account, fg_color="#DC3545", hover_color="#C82333",
             font=customtkinter.CTkFont(size=14)
         )
@@ -527,7 +527,7 @@ class App(customtkinter.CTk):
 
         # Nút kiểm tra và cập nhật
         check_button = customtkinter.CTkButton(
-            account_frame, text="🔄 Kiểm tra & Cập nhật",
+            account_frame, text="Kiểm tra & Cập nhật",
             command=self.check_zalo_status, height=32,
             font=customtkinter.CTkFont(size=10)
         )
@@ -535,7 +535,7 @@ class App(customtkinter.CTk):
 
         # Nút mở Zalo
         open_zalo_btn = customtkinter.CTkButton(
-            account_frame, text="📱 Mở Zalo",
+            account_frame, text="Mở Zalo",
             command=self.open_zalo_window, height=32,
             fg_color="#0068FF", hover_color="#0052CC",
             font=customtkinter.CTkFont(size=10)
@@ -568,7 +568,7 @@ class App(customtkinter.CTk):
         # Nút chọn file Excel
         self.select_excel_button = customtkinter.CTkButton(
             data_frame,
-            text="� Chọn File Excel",
+            text="Chọn File Excel",
             command=self.select_zalo_excel,
             height=32,
             font=customtkinter.CTkFont(size=11)
@@ -609,7 +609,7 @@ class App(customtkinter.CTk):
         self.skip_processed_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
         self.skip_processed_checkbox = customtkinter.CTkCheckBox(
             friend_frame,
-            text="☑️ Bỏ qua khách hàng đã kết bạn thành công",
+            text="Bỏ qua khách hàng đã kết bạn thành công",
             variable=self.skip_processed_var,
             font=customtkinter.CTkFont(size=10),
             text_color="#28A745"
@@ -625,7 +625,7 @@ class App(customtkinter.CTk):
         # Nút kết bạn
         self.add_friend_button = customtkinter.CTkButton(
             buttons_frame,
-            text="➕ Kết Bạn Hàng Loạt",
+            text="Kết Bạn Hàng Loạt",
             command=self.add_friends_bulk,
             fg_color="#FFC107",
             hover_color="#E0A800",
@@ -638,7 +638,7 @@ class App(customtkinter.CTk):
         # Nút tạm dừng/tiếp tục (Zalo)
         self.zalo_pause_button = customtkinter.CTkButton(
             buttons_frame,
-            text="⏸️ Tạm dừng",
+            text="Tạm dừng",
             command=self.toggle_pause,
             fg_color="#6C757D",
             hover_color="#5A6268",
@@ -701,7 +701,7 @@ Trân trọng!"""
         self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
         self.skip_sent_messages_checkbox = customtkinter.CTkCheckBox(
             message_frame,
-            text="☑️ Bỏ qua khách hàng đã gửi tin nhắn thành công",
+            text="Bỏ qua khách hàng đã gửi tin nhắn thành công",
             variable=self.skip_sent_messages_var,
             font=customtkinter.CTkFont(size=10),
             text_color="#28A745"
@@ -711,7 +711,7 @@ Trân trọng!"""
         # Nút gửi tin nhắn
         self.send_message_button = customtkinter.CTkButton(
             message_frame,
-            text="📤 Gửi Tin Nhắn Hàng Loạt",
+            text="Gửi Tin Nhắn Hàng Loạt",
             command=self.send_bulk_messages,
             fg_color="#28A745",
             hover_color="#218838",
@@ -912,7 +912,7 @@ Trân trọng!"""
             return
 
         save_format_value = self.save_format_button.get()
-        save_format = "JSON" if save_format_value == "Lưu dạng JSON" else "PDF"
+        save_format = "JSON" if save_format_value == "JSON" else "PDF"
 
         self._disable_all_controls(is_rpa_task=True)
         
@@ -1725,7 +1725,7 @@ Trân trọng!"""
 
         # Reset trạng thái tạm dừng
         self.is_paused = False
-        self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+        self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
         self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
 
         # Chạy trong thread riêng
@@ -1800,7 +1800,7 @@ Trân trọng!"""
 
         # Reset trạng thái tạm dừng
         self.is_paused = False
-        self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+        self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
         self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
 
         # Chạy trong thread riêng
@@ -1815,11 +1815,11 @@ Trân trọng!"""
         self.is_paused = not self.is_paused
 
         if self.is_paused:
-            self.zalo_pause_button.configure(text="▶️ Tiếp tục", fg_color="#28A745", hover_color="#218838")
-            self.log_to_gui("⏸️ Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
+            self.zalo_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
+            self.log_to_gui("Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
         else:
-            self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-            self.log_to_gui("▶️ Tiếp tục chạy...")
+            self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+            self.log_to_gui("Tiếp tục chạy...")
 
 
 
