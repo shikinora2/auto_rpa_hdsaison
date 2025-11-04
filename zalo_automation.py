@@ -14,9 +14,23 @@ logger = logging.getLogger(__name__)
 
 class ZaloAutomation:
     """Class xử lý tự động hóa Zalo"""
-    
+
     CHAT_URL = "https://chat.zalo.me/"
-    
+
+    # ==================== SELECTORS ====================
+    # Nút "Phân loại" (Tag/Label button)
+    SELECTOR_BTN_PHAN_LOAI = 'i.fa.fa-outline-tag.label-ico-header[data-translate-title="STR_LABEL_CLASS"]'
+
+    # Thẻ "Khách hàng" (Customer label/tag)
+    SELECTOR_THE_KHACH_HANG = 'div.zmenu-item:has-text("Khách hàng")'
+    SELECTOR_THE_KHACH_HANG_ALT = '.zmenu-item:has(.fa.fa-Tag_24_Filled) .truncate:has-text("Khách hàng")'
+
+    # Ô "Soạn tin nhắn" (Message input box)
+    SELECTOR_O_SOAN_TIN = '#richInput.rich-input'
+    SELECTOR_O_SOAN_TIN_ALT = 'div[contenteditable="true"]#richInput'
+    SELECTOR_O_SOAN_TIN_CONTAINER = '.chat-input-container__left-layout'
+    # ===================================================
+
     def __init__(self, page: Page):
         """
         Khởi tạo ZaloAutomation
