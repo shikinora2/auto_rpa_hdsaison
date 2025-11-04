@@ -67,9 +67,8 @@ class App(customtkinter.CTk):
         self.current_account_id = None  # ID tài khoản đang chọn
         self.account_manager = zalo_logic.ZaloAccountManager()  # Khởi tạo ngay
 
-        # Biến quản lý trạng thái tạm dừng và dừng
+        # Biến quản lý trạng thái tạm dừng
         self.is_paused = False
-        self.is_stopped = False
 
         # === TAB 1: TRANG CHỦ ===
         self.create_home_tab()
@@ -585,14 +584,79 @@ class App(customtkinter.CTk):
         )
         self.zalo_customer_count_label.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="w")
 
+        # === 2. KẾT BẠN HÀNG LOẠT ===
+        friend_frame = customtkinter.CTkFrame(scrollable_frame)
+        friend_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        friend_frame.grid_columnconfigure(0, weight=1)
+
+        friend_title = customtkinter.CTkLabel(
+            friend_frame,
+            text="� Kết Bạn Hàng Loạt",
+            font=customtkinter.CTkFont(weight="bold", size=12)
+        )
+        friend_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
+
+        # Hướng dẫn
+        friend_help = customtkinter.CTkLabel(
+            friend_frame,
+            text="Gửi lời mời kết bạn đến tất cả số điện thoại trong danh sách",
+            font=customtkinter.CTkFont(size=9),
+            text_color="gray"
+        )
+        friend_help.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
+
+        # Checkbox bỏ qua khách hàng đã xử lý
+        self.skip_processed_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
+        self.skip_processed_checkbox = customtkinter.CTkCheckBox(
+            friend_frame,
+            text="☑️ Bỏ qua khách hàng đã kết bạn thành công",
+            variable=self.skip_processed_var,
+            font=customtkinter.CTkFont(size=10),
+            text_color="#28A745"
+        )
+        self.skip_processed_checkbox.grid(row=2, column=0, padx=15, pady=(0, 10), sticky="w")
+
+        # Frame chứa các nút
+        buttons_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
+        buttons_frame.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 15))
+        buttons_frame.grid_columnconfigure(0, weight=1)
+        buttons_frame.grid_columnconfigure(1, weight=0)
+
+        # Nút kết bạn
+        self.add_friend_button = customtkinter.CTkButton(
+            buttons_frame,
+            text="➕ Kết Bạn Hàng Loạt",
+            command=self.add_friends_bulk,
+            fg_color="#FFC107",
+            hover_color="#E0A800",
+            text_color="black",
+            height=36,
+            font=customtkinter.CTkFont(size=11, weight="bold")
+        )
+        self.add_friend_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+        # Nút tạm dừng/tiếp tục (Zalo)
+        self.zalo_pause_button = customtkinter.CTkButton(
+            buttons_frame,
+            text="⏸️ Tạm dừng",
+            command=self.toggle_pause,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            height=36,
+            width=120,
+            font=customtkinter.CTkFont(size=11, weight="bold"),
+            state="disabled"  # Mặc định disabled
+        )
+        self.zalo_pause_button.grid(row=0, column=1, sticky="ew")
+
         # === 3. NHẮN TIN HÀNG LOẠT ===
         message_frame = customtkinter.CTkFrame(scrollable_frame)
-        message_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        message_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         message_frame.grid_columnconfigure(0, weight=1)
 
         message_title = customtkinter.CTkLabel(
             message_frame,
-            text="💬 Nhắn Tin Hàng Loạt",
+            text="� Nhắn Tin Hàng Loạt",
             font=customtkinter.CTkFont(weight="bold", size=12)
         )
         message_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
@@ -633,6 +697,17 @@ Vui lòng liên hệ nếu có thắc mắc.
 Trân trọng!"""
         self.zalo_message_template.insert("1.0", default_template)
 
+        # Checkbox bỏ qua khách hàng đã gửi tin nhắn
+        self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
+        self.skip_sent_messages_checkbox = customtkinter.CTkCheckBox(
+            message_frame,
+            text="☑️ Bỏ qua khách hàng đã gửi tin nhắn thành công",
+            variable=self.skip_sent_messages_var,
+            font=customtkinter.CTkFont(size=10),
+            text_color="#28A745"
+        )
+        self.skip_sent_messages_checkbox.grid(row=4, column=0, padx=15, pady=(0, 5), sticky="w")
+
         # Nút gửi tin nhắn
         self.send_message_button = customtkinter.CTkButton(
             message_frame,
@@ -643,75 +718,7 @@ Trân trọng!"""
             height=36,
             font=customtkinter.CTkFont(size=11, weight="bold")
         )
-        self.send_message_button.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 15))
-
-        # === 4. KẾT BẠN HÀNG LOẠT ===
-        friend_frame = customtkinter.CTkFrame(scrollable_frame)
-        friend_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-        friend_frame.grid_columnconfigure(0, weight=1)
-
-        friend_title = customtkinter.CTkLabel(
-            friend_frame,
-            text="👥 Kết Bạn Hàng Loạt",
-            font=customtkinter.CTkFont(weight="bold", size=12)
-        )
-        friend_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
-
-        # Hướng dẫn
-        friend_help = customtkinter.CTkLabel(
-            friend_frame,
-            text="Gửi lời mời kết bạn đến tất cả số điện thoại trong danh sách",
-            font=customtkinter.CTkFont(size=9),
-            text_color="gray"
-        )
-        friend_help.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="w")
-
-        # Frame chứa các nút
-        buttons_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
-        buttons_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
-        buttons_frame.grid_columnconfigure(0, weight=1)
-        buttons_frame.grid_columnconfigure(1, weight=0)
-
-        # Nút kết bạn
-        self.add_friend_button = customtkinter.CTkButton(
-            buttons_frame,
-            text="➕ Kết Bạn Hàng Loạt",
-            command=self.add_friends_bulk,
-            fg_color="#FFC107",
-            hover_color="#E0A800",
-            text_color="black",
-            height=36,
-            font=customtkinter.CTkFont(size=11, weight="bold")
-        )
-        self.add_friend_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-
-        # Nút tạm dừng/tiếp tục
-        self.pause_button = customtkinter.CTkButton(
-            buttons_frame,
-            text="⏸️ Tạm dừng",
-            command=self.toggle_pause,
-            fg_color="#6C757D",
-            hover_color="#5A6268",
-            height=36,
-            width=120,
-            font=customtkinter.CTkFont(size=11, weight="bold"),
-            state="disabled"  # Mặc định disabled
-        )
-        self.pause_button.grid(row=0, column=1, sticky="ew", padx=(0, 10))
-
-        # Nút dừng
-        self.stop_button = customtkinter.CTkButton(
-            buttons_frame,
-            text="⏹️ Dừng",
-            command=self.stop_zalo_automation,
-            fg_color="#D32F2F",
-            hover_color="#B71C1C",
-            height=36,
-            width=100,
-            font=customtkinter.CTkFont(size=11, weight="bold"),
-            state="disabled"  # Mặc định disabled
-        )
-        self.stop_button.grid(row=0, column=2, sticky="ew")
+        self.send_message_button.grid(row=5, column=0, sticky="ew", padx=15, pady=(0, 15))
 
     def on_save_format_change(self, value):
         if value == "JSON":
@@ -1337,6 +1344,11 @@ Trân trọng!"""
                     if any(x in header_lower for x in ['giới tính', 'gender', 'sex']):
                         column_mapping['gender'] = idx
 
+                # Ghi chú (để kiểm tra trạng thái đã xử lý)
+                if 'note' not in column_mapping:
+                    if any(x in header_lower for x in ['ghi chú', 'ghi chu', 'note', 'notes', 'status', 'trạng thái']):
+                        column_mapping['note'] = idx
+
             # Pass 2: Tìm các cột fallback (nếu chưa tìm thấy)
             for idx, header in enumerate(headers):
                 header_lower = header.lower()
@@ -1358,6 +1370,8 @@ Trân trọng!"""
 
             # Đọc dữ liệu
             self.zalo_customer_data = []
+            processed_count = 0  # Đếm số khách hàng đã xử lý
+
             for row in ws.iter_rows(min_row=2, values_only=True):
                 if not row or all(cell is None for cell in row):
                     continue  # Bỏ qua dòng trống
@@ -1373,6 +1387,20 @@ Trân trọng!"""
                 customer['contract_id'] = str(row[column_mapping.get('contract_id', 5)] or "").strip()
                 customer['gender'] = str(row[column_mapping.get('gender', 6)] or "").strip()
 
+                # Đọc cột "Ghi chú" nếu có
+                note = ""
+                if 'note' in column_mapping:
+                    note = str(row[column_mapping.get('note')] or "").strip()
+                customer['note'] = note
+
+                # Kiểm tra trạng thái đã xử lý
+                customer['is_processed'] = False
+                if note:
+                    # Kiểm tra nếu đã kết bạn thành công, đã là bạn bè, hoặc đã gửi lời mời
+                    if '✅ Kết bạn thành công' in note or '✅ Đã là bạn bè' in note or '⚠️ Đã gửi lời mời trước đó' in note or '✅ Gửi tin nhắn thành công' in note:
+                        customer['is_processed'] = True
+                        processed_count += 1
+
                 # Chỉ thêm nếu có ít nhất tên hoặc số điện thoại
                 if customer['name'] or customer['phone']:
                     self.zalo_customer_data.append(customer)
@@ -1386,13 +1414,22 @@ Trân trọng!"""
                 text=f"✓ {filename}",
                 text_color="green"
             )
+
+            # Hiển thị số lượng khách hàng và trạng thái
+            unprocessed_count = len(self.zalo_customer_data) - processed_count
+            status_text = f"Tổng: {len(self.zalo_customer_data)}"
+            if processed_count > 0:
+                status_text += f" (✅ {processed_count} đã xử lý, 🔄 {unprocessed_count} chưa xử lý)"
+
             self.zalo_customer_count_label.configure(
-                text=f"Số khách hàng: {len(self.zalo_customer_data)}",
+                text=status_text,
                 text_color="#28A745"
             )
 
             self.log_to_gui(f"✅ Đã tải {len(self.zalo_customer_data)} khách hàng từ Excel")
-            self.log_to_gui(f"   Các cột được nhận diện: {', '.join(column_mapping.keys())}")
+            if processed_count > 0:
+                self.log_to_gui(f"   📊 Trạng thái: {processed_count} đã xử lý, {unprocessed_count} chưa xử lý")
+            self.log_to_gui(f"   📋 Các cột được nhận diện: {', '.join(column_mapping.keys())}")
 
         except ImportError:
             self.log_to_gui("❌ Lỗi: Chưa cài đặt openpyxl. Chạy: pip install openpyxl")
@@ -1487,6 +1524,9 @@ Trân trọng!"""
                     # Tạo message ghi chú và chọn màu
                     if status == 'success':
                         note = f"✅ Kết bạn thành công ({timestamp})"
+                        fill_color = green_fill
+                    elif status == 'already_friend':
+                        note = f"✅ Đã là bạn bè ({timestamp})"
                         fill_color = green_fill
                     elif status == 'already_sent':
                         note = f"⚠️ Đã gửi lời mời trước đó ({timestamp})"
@@ -1633,6 +1673,28 @@ Trân trọng!"""
             )
             return
 
+        # Lọc khách hàng theo checkbox
+        skip_sent = self.skip_sent_messages_var.get()
+        customers_to_process = []
+
+        if skip_sent:
+            # Chỉ lấy khách hàng chưa gửi tin nhắn thành công
+            customers_to_process = [c for c in self.zalo_customer_data if not c.get('is_processed', False)]
+            skipped_count = len(self.zalo_customer_data) - len(customers_to_process)
+
+            if len(customers_to_process) == 0:
+                messagebox.showinfo(
+                    "Thông báo",
+                    "Tất cả khách hàng đã được gửi tin nhắn thành công!\n\n"
+                    "Bỏ tick '☑️ Bỏ qua khách hàng đã gửi tin nhắn thành công' nếu muốn gửi lại.",
+                    parent=self
+                )
+                return
+        else:
+            # Xử lý tất cả
+            customers_to_process = self.zalo_customer_data
+            skipped_count = 0
+
         # Lấy template
         template = self.zalo_message_template.get("1.0", "end-1c").strip()
         if not template:
@@ -1644,22 +1706,27 @@ Trân trọng!"""
             return
 
         # Xác nhận
+        confirm_msg = f"Bạn có chắc muốn gửi tin nhắn đến {len(customers_to_process)} khách hàng?"
+        if skipped_count > 0:
+            confirm_msg += f"\n\n(Bỏ qua {skipped_count} khách hàng đã gửi thành công)"
+        confirm_msg += "\n\nLưu ý: Bạn cần đăng nhập Zalo trước!"
+
         result = messagebox.askyesno(
             "Xác nhận",
-            f"Bạn có chắc muốn gửi tin nhắn đến {len(self.zalo_customer_data)} khách hàng?\n\n"
-            f"Lưu ý: Bạn cần đăng nhập Zalo trước!",
+            confirm_msg,
             parent=self
         )
 
         if not result:
             return
 
-        # Reset trạng thái tạm dừng và dừng
+        # Lưu danh sách cần xử lý vào biến tạm
+        self.current_customers_to_process = customers_to_process
+
+        # Reset trạng thái tạm dừng
         self.is_paused = False
-        self.is_stopped = False
-        self.pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-        self.pause_button.configure(state="normal")  # Enable nút tạm dừng
-        self.stop_button.configure(state="normal")  # Enable nút dừng
+        self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+        self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
 
         # Chạy trong thread riêng
         thread = threading.Thread(
@@ -1680,34 +1747,61 @@ Trân trọng!"""
             )
             return
 
+        # Lọc khách hàng theo checkbox
+        skip_processed = self.skip_processed_var.get()
+        customers_to_process = []
+
+        if skip_processed:
+            # Chỉ lấy khách hàng chưa kết bạn thành công
+            customers_to_process = [c for c in self.zalo_customer_data if not c.get('is_processed', False)]
+            skipped_count = len(self.zalo_customer_data) - len(customers_to_process)
+
+            if len(customers_to_process) == 0:
+                messagebox.showinfo(
+                    "Thông báo",
+                    "Tất cả khách hàng đã được kết bạn thành công!\n\n"
+                    "Bỏ tick '☑️ Bỏ qua khách hàng đã kết bạn thành công' nếu muốn gửi lại.",
+                    parent=self
+                )
+                return
+        else:
+            # Xử lý tất cả
+            customers_to_process = self.zalo_customer_data
+            skipped_count = 0
+
         # Đếm số khách hàng có số điện thoại
-        phone_count = sum(1 for c in self.zalo_customer_data if c.get('phone'))
+        phone_count = sum(1 for c in customers_to_process if c.get('phone'))
 
         if phone_count == 0:
             messagebox.showwarning(
                 "Cảnh báo",
-                "Không tìm thấy số điện thoại nào trong dữ liệu!",
+                "Không tìm thấy số điện thoại nào trong dữ liệu chưa xử lý!",
                 parent=self
             )
             return
 
         # Xác nhận
+        confirm_msg = f"Bạn có chắc muốn gửi lời mời kết bạn đến {phone_count} số điện thoại?"
+        if skipped_count > 0:
+            confirm_msg += f"\n\n(Bỏ qua {skipped_count} khách hàng đã kết bạn thành công)"
+        confirm_msg += "\n\nLưu ý: Bạn cần đăng nhập Zalo trước!"
+
         result = messagebox.askyesno(
             "Xác nhận",
-            f"Bạn có chắc muốn gửi lời mời kết bạn đến {phone_count} số điện thoại?\n\n"
-            f"Lưu ý: Bạn cần đăng nhập Zalo trước!",
+            confirm_msg,
             parent=self
         )
 
         if not result:
             return
 
-        # Reset trạng thái tạm dừng và dừng
+        # Lưu danh sách cần xử lý vào biến tạm
+        self.current_customers_to_process = customers_to_process
+
+        # Reset trạng thái tạm dừng
         self.is_paused = False
-        self.is_stopped = False
-        self.pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-        self.pause_button.configure(state="normal")  # Enable nút tạm dừng
-        self.stop_button.configure(state="normal")  # Enable nút dừng
+        self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+        self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
 
         # Chạy trong thread riêng
         thread = threading.Thread(
@@ -1721,21 +1815,13 @@ Trân trọng!"""
         self.is_paused = not self.is_paused
 
         if self.is_paused:
-            self.pause_button.configure(text="▶️ Tiếp tục", fg_color="#28A745", hover_color="#218838")
+            self.zalo_pause_button.configure(text="▶️ Tiếp tục", fg_color="#28A745", hover_color="#218838")
             self.log_to_gui("⏸️ Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
         else:
-            self.pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+            self.zalo_pause_button.configure(text="⏸️ Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
             self.log_to_gui("▶️ Tiếp tục chạy...")
 
-    def stop_zalo_automation(self):
-        """Dừng hoàn toàn automation Zalo"""
-        self.is_stopped = True
-        self.is_paused = False  # Thoát khỏi pause nếu đang pause
-        self.log_to_gui("🛑 Đang dừng automation...")
 
-        # Disable các nút
-        self.pause_button.configure(state="disabled")
-        self.stop_button.configure(state="disabled")
 
     def _run_send_bulk_messages(self, template):
         """Thread worker để gửi tin nhắn hàng loạt"""
@@ -1769,19 +1855,21 @@ Trân trọng!"""
                 return
 
             self.log_to_gui("✅ Đã đăng nhập Zalo")
-            self.log_to_gui(f"📤 Bắt đầu gửi tin nhắn đến {len(self.zalo_customer_data)} khách hàng...")
+
+            # Sử dụng danh sách đã lọc
+            customers = getattr(self, 'current_customers_to_process', self.zalo_customer_data)
+            self.log_to_gui(f"📤 Bắt đầu gửi tin nhắn đến {len(customers)} khách hàng...")
 
             # Tạo automation instance
             automation = zalo_automation.ZaloAutomation(page)
 
-            # Gửi tin nhắn hàng loạt (với hỗ trợ pause/stop)
+            # Gửi tin nhắn hàng loạt (với hỗ trợ pause)
             result = automation.send_bulk_messages(
-                self.zalo_customer_data,
+                customers,
                 template,
                 callback=self.log_to_gui,
                 delay=3,
-                is_paused_func=lambda: self.is_paused,
-                is_stopped_func=lambda: self.is_stopped
+                is_paused_func=lambda: self.is_paused
             )
 
             # Hiển thị kết quả
@@ -1804,9 +1892,8 @@ Trân trọng!"""
                 except Exception as e:
                     self.log_to_gui(f"⚠️ Không thể lưu kết quả vào Excel: {str(e)}")
 
-            # Disable các nút điều khiển
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            # Disable nút điều khiển
+            self.zalo_pause_button.configure(state="disabled")
 
             # Giữ trình duyệt mở
             self.log_to_gui("\nℹ️ Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
@@ -1832,12 +1919,10 @@ Trân trọng!"""
         except ImportError as e:
             self.log_to_gui(f"❌ Lỗi import: {str(e)}")
             self.log_to_gui("💡 Vui lòng cài đặt: pip install playwright")
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            self.zalo_pause_button.configure(state="disabled")
         except Exception as e:
             self.log_to_gui(f"❌ Lỗi khi gửi tin nhắn: {str(e)}")
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            self.zalo_pause_button.configure(state="disabled")
 
     def _run_add_friends_bulk(self):
         """Thread worker để kết bạn hàng loạt"""
@@ -1872,8 +1957,9 @@ Trân trọng!"""
 
             self.log_to_gui("✅ Đã đăng nhập Zalo")
 
-            # Lọc khách hàng có số điện thoại
-            customers_with_phone = [c for c in self.zalo_customer_data if c.get('phone')]
+            # Sử dụng danh sách đã lọc và lọc thêm khách hàng có số điện thoại
+            customers = getattr(self, 'current_customers_to_process', self.zalo_customer_data)
+            customers_with_phone = [c for c in customers if c.get('phone')]
             self.log_to_gui(f"➕ Bắt đầu kết bạn với {len(customers_with_phone)} số điện thoại...")
 
             # Tạo automation instance
@@ -1887,24 +1973,14 @@ Trân trọng!"""
             success_count = 0
             failed_count = 0
             already_sent_count = 0
+            already_friend_count = 0  # Đếm số người đã là bạn bè
             results = []  # Lưu kết quả chi tiết
 
             for idx, customer in enumerate(customers_with_phone, 1):
-                # Kiểm tra dừng
-                if self.is_stopped:
-                    self.log_to_gui("\n🛑 Đã dừng theo yêu cầu người dùng")
-                    break
-
                 # Kiểm tra tạm dừng
                 import random
                 while self.is_paused:
-                    if self.is_stopped:  # Kiểm tra dừng trong khi tạm dừng
-                        self.log_to_gui("\n🛑 Đã dừng theo yêu cầu người dùng")
-                        break
                     time.sleep(random.uniform(0.4, 0.6))
-
-                if self.is_stopped:  # Kiểm tra lại sau khi thoát khỏi pause
-                    break
 
                 phone = customer.get('phone', '').strip()
                 name = customer.get('name', 'N/A')
@@ -1929,6 +2005,19 @@ Trân trọng!"""
                         'name': name,
                         'zalo_name': display_name,
                         'status': 'already_sent'
+                    })
+                elif result == "already_friend":
+                    # Đã là bạn bè
+                    already_friend_count += 1
+                    result_msg = f"✅ [{idx}/{len(customers_with_phone)}] Đã là bạn bè: {phone}"
+                    if display_name:
+                        result_msg += f" - Tên Zalo: {display_name}"
+                    self.log_to_gui(result_msg)
+                    results.append({
+                        'phone': phone,
+                        'name': name,
+                        'zalo_name': display_name,
+                        'status': 'already_friend'
                     })
                 elif result:
                     # Thành công
@@ -1963,23 +2052,14 @@ Trân trọng!"""
                     import random
                     delay = random.uniform(2.5, 3.5)
                     self.log_to_gui(f"⏳ Chờ {delay:.1f} giây trước khi kết bạn tiếp...")
-
-                    # Chia nhỏ delay để có thể dừng nhanh hơn
-                    delay_steps = int(delay * 10)  # Chia thành các bước 0.1s
-                    for _ in range(delay_steps):
-                        if self.is_stopped:
-                            self.log_to_gui("\n🛑 Đã dừng theo yêu cầu người dùng")
-                            break
-                        time.sleep(0.1)
-
-                    if self.is_stopped:
-                        break
+                    time.sleep(delay)
 
             # Hiển thị kết quả
             self.log_to_gui("\n" + "="*60)
             self.log_to_gui(f"✅ HOÀN TẤT KẾT BẠN HÀNG LOẠT")
             self.log_to_gui(f"   - Tổng số: {len(customers_with_phone)}")
             self.log_to_gui(f"   - Thành công: {success_count}")
+            self.log_to_gui(f"   - Đã là bạn bè: {already_friend_count}")
             self.log_to_gui(f"   - Đã gửi lời mời trước đó: {already_sent_count}")
             self.log_to_gui(f"   - Thất bại: {failed_count}")
 
@@ -2014,9 +2094,8 @@ Trân trọng!"""
                 except Exception as e:
                     self.log_to_gui(f"⚠️ Không thể lưu kết quả vào Excel: {str(e)}")
 
-            # Disable các nút điều khiển
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            # Disable nút điều khiển
+            self.zalo_pause_button.configure(state="disabled")
 
             # Giữ trình duyệt mở
             self.log_to_gui("\nℹ️ Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
@@ -2042,12 +2121,10 @@ Trân trọng!"""
         except ImportError as e:
             self.log_to_gui(f"❌ Lỗi import: {str(e)}")
             self.log_to_gui("💡 Vui lòng cài đặt: pip install playwright")
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            self.zalo_pause_button.configure(state="disabled")
         except Exception as e:
             self.log_to_gui(f"❌ Lỗi khi kết bạn: {str(e)}")
-            self.pause_button.configure(state="disabled")
-            self.stop_button.configure(state="disabled")
+            self.zalo_pause_button.configure(state="disabled")
 
     # === QUẢN LÝ NHIỀU TÀI KHOẢN ZALO ===
 

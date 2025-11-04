@@ -405,8 +405,10 @@ class ZaloAutomation:
             except Exception as e:
                 logger.warning(f"⚠️ Không lấy được tên hiển thị: {str(e)}")
 
-            # Bước 6: Kiểm tra nếu đã gửi lời mời trước đó (có nút "Hủy kết bạn")
+            # Bước 6: Kiểm tra trạng thái kết bạn
             logger.info("📍 Bước 6: Kiểm tra trạng thái kết bạn...")
+
+            # Kiểm tra 1: Đã gửi lời mời trước đó (có nút "Hủy kết bạn")
             try:
                 undo_btn = self.page.wait_for_selector(
                     'div.truncate[data-translate-inner="STR_UNDO_REQUEST"]:has-text("Hủy kết bạn")',
@@ -419,6 +421,30 @@ class ZaloAutomation:
                     return "already_sent", display_name  # Trả về trạng thái đặc biệt
             except PlaywrightTimeoutError:
                 pass  # Không có nút "Hủy kết bạn" - OK, tiếp tục
+
+            # Kiểm tra 2: Đã là bạn bè (chỉ có nút "Nhắn tin", không có "Kết bạn" và "Hủy kết bạn")
+            try:
+                chat_btn = self.page.wait_for_selector(
+                    'div.truncate[data-translate-inner="STR_CHAT"]:has-text("Nhắn tin")',
+                    timeout=2000,
+                    state="visible"
+                )
+                if chat_btn:
+                    # Kiểm tra xem có nút "Kết bạn" không
+                    try:
+                        add_friend_check = self.page.wait_for_selector(
+                            'div.z--btn--v2:has-text("Kết bạn")',
+                            timeout=1000,
+                            state="visible"
+                        )
+                        # Nếu có nút "Kết bạn" thì chưa phải bạn bè, tiếp tục bình thường
+                    except PlaywrightTimeoutError:
+                        # Không có nút "Kết bạn" và chỉ có nút "Nhắn tin" => Đã là bạn bè
+                        logger.info(f"✅ Đã là bạn bè với {phone_number}")
+                        logger.info("ℹ️ Bỏ qua khách hàng này và chuyển sang người tiếp theo")
+                        return "already_friend", display_name  # Trả về trạng thái đặc biệt
+            except PlaywrightTimeoutError:
+                pass  # Không có nút "Nhắn tin" - OK, tiếp tục
 
             # Bước 7: Nhấn nút "Kết bạn" (mở form lời mời)
             logger.info("📍 Bước 7: Nhấn nút 'Kết bạn' (mở form)...")
@@ -568,7 +594,7 @@ class ZaloAutomation:
                 pass
     
     def send_bulk_messages(self, customer_list: list, template: str, callback=None, delay: int = 3,
-                          is_paused_func=None, is_stopped_func=None):
+                          is_paused_func=None):
         """
         Gửi tin nhắn hàng loạt
 
@@ -578,7 +604,6 @@ class ZaloAutomation:
             callback: Hàm callback để báo tiến trình
             delay: Thời gian chờ giữa các tin nhắn (giây)
             is_paused_func: Hàm kiểm tra trạng thái tạm dừng (trả về True/False)
-            is_stopped_func: Hàm kiểm tra trạng thái dừng (trả về True/False)
 
         Returns:
             dict: Kết quả {success: int, failed: int, errors: list, details: list}
@@ -586,23 +611,10 @@ class ZaloAutomation:
         result = {"success": 0, "failed": 0, "errors": [], "details": []}
 
         for idx, customer in enumerate(customer_list, 1):
-            # Kiểm tra dừng
-            if is_stopped_func and is_stopped_func():
-                if callback:
-                    callback("\n🛑 Đã dừng theo yêu cầu người dùng")
-                break
-
             # Kiểm tra tạm dừng
             if is_paused_func:
                 while is_paused_func():
-                    if is_stopped_func and is_stopped_func():  # Kiểm tra dừng trong khi tạm dừng
-                        if callback:
-                            callback("\n🛑 Đã dừng theo yêu cầu người dùng")
-                        break
                     time.sleep(random.uniform(0.4, 0.6))
-
-                if is_stopped_func and is_stopped_func():  # Kiểm tra lại sau khi thoát khỏi pause
-                    break
 
             try:
                 # Format tin nhắn
@@ -658,18 +670,7 @@ class ZaloAutomation:
                 if idx < len(customer_list):
                     # Thêm biến động ±20% vào delay
                     random_delay = delay * random.uniform(0.8, 1.2)
-
-                    # Chia nhỏ delay để có thể dừng nhanh hơn
-                    delay_steps = int(random_delay * 10)  # Chia thành các bước 0.1s
-                    for _ in range(delay_steps):
-                        if is_stopped_func and is_stopped_func():
-                            if callback:
-                                callback("\n🛑 Đã dừng theo yêu cầu người dùng")
-                            break
-                        time.sleep(0.1)
-
-                    if is_stopped_func and is_stopped_func():
-                        break
+                    time.sleep(random_delay)
 
             except Exception as e:
                 result['failed'] += 1
