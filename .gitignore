@@ -1,5 +1,11 @@
-# File cấu hình chứa thông tin đăng nhập - KHÔNG đẩy lên Git
+# Thư mục dữ liệu ứng dụng - Chứa config, session, accounts
+app_data/
+
+# File cấu hình cũ (deprecated - đã chuyển vào app_data/)
 config.json
+zalo_session/
+zalo_session_*/
+zalo_accounts.json
 
 # Python cache
 __pycache__/
