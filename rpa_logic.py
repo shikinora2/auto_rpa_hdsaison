@@ -553,8 +553,9 @@ def run_scrape_and_download_files(
             callback(f"🎉 HOÀN TẤT! ĐÃ XỬ LÝ TẤT CẢ {len(contract_ids_to_process)} HỢP ĐỒNG!")
         
         callback("===================================")
-        callback("\n(Trình duyệt sẽ tự đóng sau 10 giây...)")
-        time.sleep(10)
+        close_delay = random.uniform(8, 12)
+        callback(f"\n(Trình duyệt sẽ tự đóng sau {close_delay:.1f} giây...)")
+        time.sleep(close_delay)
 
     except InterruptedError: # Bắt lỗi chủ động dừng
         callback("\n===================================")
@@ -814,8 +815,9 @@ def run_scrape_and_export_details(
             _export_details_to_excel(all_scraped_data, final_save_dir, start_date_ddmmyyyy, end_date_ddmmyyyy)
             callback("===================================")
         
-        callback("\n(Trình duyệt sẽ tự đóng sau 10 giây...)")
-        time.sleep(10)
+        close_delay = random.uniform(8, 12)
+        callback(f"\n(Trình duyệt sẽ tự đóng sau {close_delay:.1f} giây...)")
+        time.sleep(close_delay)
 
     except InterruptedError: # Bắt lỗi chủ động dừng
         callback("\n===================================")
