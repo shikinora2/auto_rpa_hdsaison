@@ -100,26 +100,36 @@ class ZaloAutomation:
 
     def search_and_open_chat(self, phone_number: str, timeout: int = 10000):
         """
-        Tìm kiếm và mở chat với số điện thoại
-        
+        Tìm kiếm và mở chat với số điện thoại theo quy trình:
+        1. Nhấn vào ô tìm kiếm
+        2. Nhập số điện thoại
+        3. Đợi thông tin khách hàng hiện lên
+        4. Kiểm tra có thông báo lỗi không (số chưa đăng ký, không cho phép tìm kiếm)
+        5. Nhấn vào thông tin khách hàng
+
         Args:
             phone_number: Số điện thoại cần tìm
             timeout: Thời gian chờ tối đa (milliseconds)
-            
+
         Returns:
-            bool: True nếu thành công, False nếu không
+            tuple: (success: bool, error_message: str or None)
+                - (True, None) nếu thành công
+                - (False, "not_registered") nếu số chưa đăng ký
+                - (False, "not_found") nếu không tìm thấy
+                - (False, error_msg) nếu lỗi khác
         """
         try:
-            logger.info(f"Đang tìm kiếm: {phone_number}")
-            
-            # Tìm ô search
+            logger.info(f"🔍 Đang tìm kiếm: {phone_number}")
+
+            # Bước 1: Tìm ô search (id="contact-search-input")
             search_selectors = [
+                "input#contact-search-input",  # Selector chính xác từ HTML
                 "input[placeholder*='Tìm kiếm']",
                 "input[placeholder*='Search']",
                 "input[type='text'][class*='search']",
                 "div[class*='search'] input",
             ]
-            
+
             search_box = None
             for selector in search_selectors:
                 try:
@@ -129,65 +139,114 @@ class ZaloAutomation:
                         break
                 except PlaywrightTimeoutError:
                     continue
-            
+
             if not search_box:
                 logger.error("❌ Không tìm thấy ô tìm kiếm")
-                return False
-            
-            # Nhập số điện thoại
+                return (False, "search_box_not_found")
+
+            # Bước 2: Nhập số điện thoại
+            logger.info(f"📝 Nhập số điện thoại: {phone_number}")
             search_box.click()
+            time.sleep(random.uniform(0.2, 0.4))
             search_box.fill("")  # Clear
-            time.sleep(random.uniform(0.3, 0.7))
+            time.sleep(random.uniform(0.2, 0.4))
             search_box.type(phone_number, delay=100)
+
+            # Bước 3: Đợi thông tin khách hàng hiện lên
+            logger.info("⏳ Đợi thông tin khách hàng hiện lên...")
             time.sleep(random.uniform(1.5, 2.5))  # Chờ kết quả tìm kiếm
-            
-            # Tìm và click vào kết quả đầu tiên
+
+            # Bước 4: Kiểm tra có thông báo lỗi không
+            # Selector cho thông báo "Số điện thoại chưa đăng ký tài khoản hoặc không cho phép tìm kiếm"
+            error_selectors = [
+                'span[data-translate-inner="STR_UNVALID_SEARCH_NUM_PHONE"]',
+                'i.fa.fa-outline-call-info',
+            ]
+
+            for error_selector in error_selectors:
+                try:
+                    error_element = self.page.wait_for_selector(error_selector, timeout=2000, state="visible")
+                    if error_element:
+                        logger.warning(f"⚠️ Số điện thoại {phone_number} chưa đăng ký hoặc không cho phép tìm kiếm")
+                        return (False, "not_registered")
+                except PlaywrightTimeoutError:
+                    continue
+
+            # Bước 5: Tìm và click vào kết quả đầu tiên (thông tin khách hàng)
+            # Sử dụng selector từ HTML: div.conv-item với class chứa số điện thoại
             result_selectors = [
+                # Selector chính xác từ HTML
+                'div.conv-item.conv-rel',
+                'div[class*="conv-item"][class*="lv-2"]',
+                # Fallback selectors
                 "div[class*='search-result'] div[class*='item']:first-child",
                 "div[class*='result'] div[class*='conv-item']:first-child",
                 "div[class*='contact-item']:first-child",
+                # Selector tìm theo text số điện thoại
+                f'span.txt-highlight:has-text("{phone_number}")',
             ]
-            
+
+            result_found = False
             for selector in result_selectors:
                 try:
                     result = self.page.wait_for_selector(selector, timeout=5000, state="visible")
                     if result:
+                        logger.info(f"✓ Tìm thấy thông tin khách hàng: {selector}")
+
+                        # Nhấn vào thông tin khách hàng
                         result.click()
-                        logger.info("✓ Đã mở chat")
+                        logger.info("✓ Đã nhấn vào thông tin khách hàng")
                         time.sleep(random.uniform(0.8, 1.5))
-                        return True
+                        result_found = True
+                        break
                 except PlaywrightTimeoutError:
                     continue
-            
-            logger.warning(f"⚠️ Không tìm thấy kết quả cho: {phone_number}")
-            return False
-            
+
+            if not result_found:
+                logger.warning(f"⚠️ Không tìm thấy kết quả cho: {phone_number}")
+                return (False, "not_found")
+
+            logger.info("✅ Đã mở chat thành công")
+            return (True, None)
+
         except Exception as e:
-            logger.error(f"Lỗi khi tìm kiếm: {str(e)}")
-            return False
+            logger.error(f"❌ Lỗi khi tìm kiếm: {str(e)}")
+            return (False, str(e))
     
     def send_message(self, message: str, timeout: int = 10000):
         """
-        Gửi tin nhắn trong chat đang mở
-        
+        Gửi tin nhắn trong chat đang mở theo quy trình:
+        1. Kiểm tra page còn mở không
+        2. Tìm ô nhập tin nhắn (id="richInput")
+        3. Click vào ô nhập
+        4. Nhập nội dung tin nhắn (soạn tin)
+        5. Nhấn Enter để gửi tin nhắn (bước bắt buộc để kết thúc quy trình)
+
         Args:
             message: Nội dung tin nhắn
             timeout: Thời gian chờ tối đa (milliseconds)
-            
+
         Returns:
             bool: True nếu thành công, False nếu không
         """
         try:
-            logger.info("Đang gửi tin nhắn...")
-            
-            # Tìm ô nhập tin nhắn
+            logger.info("📝 Đang gửi tin nhắn...")
+
+            # Kiểm tra page còn mở không
+            if self.page.is_closed():
+                logger.error("❌ Trang web đã bị đóng")
+                return False
+
+            # Tìm ô nhập tin nhắn (id="richInput" từ HTML)
             input_selectors = [
+                'div#richInput.rich-input[contenteditable="true"]',  # Selector chính xác từ HTML
+                'div[contenteditable="true"]#richInput',
                 "div[contenteditable='true'][class*='input']",
                 "div[contenteditable='true'][role='textbox']",
                 "textarea[placeholder*='Nhập']",
                 "div[class*='chat-input'] div[contenteditable='true']",
             ]
-            
+
             input_box = None
             for selector in input_selectors:
                 try:
@@ -197,83 +256,170 @@ class ZaloAutomation:
                         break
                 except PlaywrightTimeoutError:
                     continue
-            
+                except Exception as e:
+                    if "closed" in str(e).lower():
+                        logger.error("❌ Trang web đã bị đóng trong khi tìm ô nhập")
+                        return False
+                    continue
+
             if not input_box:
                 logger.error("❌ Không tìm thấy ô nhập tin nhắn")
                 return False
-            
-            # Nhập tin nhắn
-            input_box.click()
-            time.sleep(random.uniform(0.2, 0.5))
 
-            # Nhập từng dòng (xử lý xuống dòng)
-            lines = message.split('\n')
-            for i, line in enumerate(lines):
-                input_box.type(line, delay=50)
-                if i < len(lines) - 1:
-                    # Shift+Enter để xuống dòng
-                    self.page.keyboard.press("Shift+Enter")
-                    time.sleep(random.uniform(0.05, 0.15))
+            # Kiểm tra lại page trước khi thao tác
+            if self.page.is_closed():
+                logger.error("❌ Trang web đã bị đóng")
+                return False
 
-            time.sleep(random.uniform(0.3, 0.7))
-            
-            # Tìm và click nút gửi
-            send_selectors = [
-                "button[class*='send']",
-                "div[class*='send-btn']",
-                "i[class*='send']",
-            ]
-            
-            for selector in send_selectors:
-                try:
-                    send_btn = self.page.wait_for_selector(selector, timeout=3000, state="visible")
-                    if send_btn:
-                        send_btn.click()
-                        logger.info("✓ Đã gửi tin nhắn")
-                        time.sleep(random.uniform(0.8, 1.5))
-                        return True
-                except PlaywrightTimeoutError:
-                    continue
-            
-            # Nếu không tìm thấy nút gửi, thử Enter
-            logger.info("Không tìm thấy nút gửi, thử Enter...")
-            self.page.keyboard.press("Enter")
-            time.sleep(random.uniform(0.8, 1.5))
-            logger.info("✓ Đã gửi tin nhắn (Enter)")
-            return True
-            
+            # Click vào ô nhập tin nhắn
+            logger.info("📍 Click vào ô nhập tin nhắn...")
+            try:
+                input_box.click()
+                time.sleep(random.uniform(0.3, 0.6))
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.error("❌ Trang web đã bị đóng khi click vào ô nhập")
+                    return False
+                raise
+
+            # Nhập tin nhắn từng ký tự (xử lý xuống dòng bằng Shift+Enter)
+            logger.info(f"📍 Nhập nội dung: {message[:50]}...")
+
+            try:
+                # Kiểm tra page trước khi nhập
+                if self.page.is_closed():
+                    logger.error("❌ Trang web đã bị đóng trong khi nhập tin nhắn")
+                    return False
+
+                # Nhập từng ký tự của tin nhắn, xử lý xuống dòng
+                for char in message:
+                    if self.page.is_closed():
+                        logger.error("❌ Trang web đã bị đóng trong khi nhập tin nhắn")
+                        return False
+
+                    if char == '\n':
+                        # Xuống dòng bằng Shift+Enter
+                        self.page.keyboard.down("Shift")
+                        self.page.keyboard.press("Enter")
+                        self.page.keyboard.up("Shift")
+                        time.sleep(random.uniform(0.05, 0.1))
+                    else:
+                        # Nhập ký tự thường
+                        self.page.keyboard.type(char, delay=30)
+
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.error("❌ Trang web đã bị đóng khi nhập tin nhắn")
+                    return False
+                raise
+
+            # Chờ một chút sau khi soạn xong
+            logger.info("⏳ Đã soạn xong tin nhắn, chuẩn bị gửi...")
+            time.sleep(random.uniform(0.5, 1.0))
+
+            # Kiểm tra page trước khi gửi
+            if self.page.is_closed():
+                logger.error("❌ Trang web đã bị đóng trước khi gửi")
+                return False
+
+            # Nhấn Enter để gửi tin nhắn (bước bắt buộc)
+            try:
+                logger.info("📤 Nhấn Enter để gửi tin nhắn...")
+                self.page.keyboard.press("Enter")
+
+                # Chờ tin nhắn được gửi đi
+                time.sleep(random.uniform(1.0, 1.5))
+
+                logger.info("✅ Đã gửi tin nhắn thành công")
+                return True
+
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    logger.error("❌ Trang web đã bị đóng khi nhấn Enter")
+                    return False
+                raise
+
         except Exception as e:
-            logger.error(f"Lỗi khi gửi tin nhắn: {str(e)}")
+            logger.error(f"❌ Lỗi khi gửi tin nhắn: {str(e)}")
             return False
     
-    def send_message_to_phone(self, phone_number: str, message: str):
+    def check_friend_status(self, timeout: int = 5000):
+        """
+        Kiểm tra trạng thái bạn bè/người lạ trong cửa sổ chat đang mở
+
+        Returns:
+            str: 'friend' nếu là bạn bè, 'stranger' nếu là người lạ, 'unknown' nếu không xác định được
+        """
+        try:
+            logger.info("🔍 Đang kiểm tra trạng thái bạn bè...")
+
+            # Chờ một chút để trang load
+            time.sleep(random.uniform(0.5, 1.0))
+
+            # Kiểm tra các dấu hiệu của người lạ
+            stranger_indicators = [
+                'div:has-text("Người lạ")',
+                'div:has-text("Stranger")',
+                'div[class*="stranger"]',
+                'span:has-text("Chưa phải bạn bè")',
+            ]
+
+            for selector in stranger_indicators:
+                try:
+                    element = self.page.wait_for_selector(selector, timeout=2000, state="visible")
+                    if element:
+                        logger.info("👤 Trạng thái: Người lạ")
+                        return 'stranger'
+                except PlaywrightTimeoutError:
+                    continue
+
+            # Nếu không phải người lạ, coi như là bạn bè
+            logger.info("👥 Trạng thái: Bạn bè")
+            return 'friend'
+
+        except Exception as e:
+            logger.warning(f"⚠️ Không xác định được trạng thái: {str(e)}")
+            return 'unknown'
+
+    def send_message_to_phone(self, phone_number: str, message: str, check_status: bool = False):
         """
         Tìm kiếm và gửi tin nhắn đến số điện thoại
-        
+
         Args:
             phone_number: Số điện thoại
             message: Nội dung tin nhắn
-            
+            check_status: Có kiểm tra trạng thái bạn bè/người lạ không
+
         Returns:
-            bool: True nếu thành công, False nếu không
+            tuple: (success: bool, friend_status: str or None, error_msg: str or None)
+                   - success: True nếu gửi thành công
+                   - friend_status: 'friend', 'stranger', 'unknown' hoặc None
+                   - error_msg: Thông báo lỗi nếu có ('not_registered', 'not_found', etc.)
         """
         try:
             # Bước 1: Tìm và mở chat
-            if not self.search_and_open_chat(phone_number):
-                return False
-            
-            # Bước 2: Gửi tin nhắn
+            search_success, error_msg = self.search_and_open_chat(phone_number)
+            if not search_success:
+                # Trả về lỗi cụ thể
+                return False, None, error_msg
+
+            # Bước 2: Kiểm tra trạng thái (nếu cần)
+            friend_status = None
+            if check_status:
+                friend_status = self.check_friend_status()
+
+            # Bước 3: Gửi tin nhắn
             if not self.send_message(message):
-                return False
-            
+                return False, friend_status, "send_failed"
+
             logger.info(f"✅ Đã gửi tin nhắn đến {phone_number}")
-            return True
-            
+            return True, friend_status, None
+
         except Exception as e:
             logger.error(f"Lỗi khi gửi tin nhắn đến {phone_number}: {str(e)}")
-            return False
+            return False, None, str(e)
     
-    def add_friend_by_phone(self, phone_number: str, contract_id: str = "", my_zalo_name: str = "", timeout: int = 10000):
+    def add_friend_by_phone(self, phone_number: str, contract_id: str = "", my_zalo_name: str = "", greeting_template: str = "", timeout: int = 10000):
         """
         Thêm bạn bằng số điện thoại theo flow:
         1. Mở Zalo
@@ -289,6 +435,7 @@ class ZaloAutomation:
             phone_number: Số điện thoại
             contract_id: Mã hợp đồng (từ Excel)
             my_zalo_name: Tên Zalo của tài khoản đang đăng nhập
+            greeting_template: Template lời chào tùy chỉnh (có thể dùng {my_name}, {contract_id})
             timeout: Thời gian chờ tối đa (milliseconds)
 
         Returns:
@@ -493,10 +640,16 @@ class ZaloAutomation:
             if not my_zalo_name:
                 my_zalo_name = "nhân viên"
 
-            if contract_id:
-                greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+            # Sử dụng template tùy chỉnh nếu có, nếu không dùng mặc định
+            if greeting_template:
+                # Template đã được format sẵn từ app_ui.py, sử dụng trực tiếp
+                greeting_message = greeting_template
             else:
-                greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ"
+                # Lời chào mặc định
+                if contract_id:
+                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+                else:
+                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ"
 
             logger.info(f"📝 Nội dung: {greeting_message}")
 
@@ -608,9 +761,14 @@ class ZaloAutomation:
                 pass
     
     def send_bulk_messages(self, customer_list: list, template: str, callback=None, delay: int = 3,
-                          is_paused_func=None):
+                          is_paused_func=None, check_friend_status: bool = True):
         """
-        Gửi tin nhắn hàng loạt
+        Gửi tin nhắn hàng loạt theo quy trình:
+        1. Tìm kiếm số điện thoại
+        2. Đợi thông tin khách hàng hiện lên
+        3. Nhấn vào thông tin khách hàng
+        4. Kiểm tra trạng thái bạn bè/người lạ (để đối chiếu)
+        5. Gửi tin nhắn (cho cả bạn bè và người lạ)
 
         Args:
             customer_list: Danh sách khách hàng (list of dict)
@@ -618,6 +776,7 @@ class ZaloAutomation:
             callback: Hàm callback để báo tiến trình
             delay: Thời gian chờ giữa các tin nhắn (giây)
             is_paused_func: Hàm kiểm tra trạng thái tạm dừng (trả về True/False)
+            check_friend_status: Có kiểm tra và ghi nhận trạng thái bạn bè/người lạ không
 
         Returns:
             dict: Kết quả {success: int, failed: int, errors: list, details: list}
@@ -631,6 +790,20 @@ class ZaloAutomation:
                     time.sleep(random.uniform(0.4, 0.6))
 
             try:
+                # Chuyển đổi giới tính từ Nam/Nữ sang anh/chị
+                gender_raw = customer.get('gender', '').strip()
+                gender_pronoun = ''
+                if gender_raw:
+                    gender_lower = gender_raw.lower()
+                    if 'nam' in gender_lower or 'male' in gender_lower:
+                        gender_pronoun = 'anh'
+                    elif 'nữ' in gender_lower or 'nv' in gender_lower or 'female' in gender_lower:
+                        gender_pronoun = 'chị'
+                    else:
+                        gender_pronoun = 'anh/chị'  # Mặc định nếu không xác định
+                else:
+                    gender_pronoun = 'anh/chị'  # Mặc định nếu không có giới tính
+
                 # Format tin nhắn
                 message = template.format(
                     name=customer.get('name', ''),
@@ -639,7 +812,7 @@ class ZaloAutomation:
                     cccd=customer.get('cccd', ''),
                     dob=customer.get('dob', ''),
                     contract_id=customer.get('contract_id', ''),
-                    gender=customer.get('gender', '')
+                    gender=gender_pronoun  # Sử dụng anh/chị thay vì Nam/Nữ
                 )
 
                 phone = customer.get('phone', '').strip()
@@ -652,33 +825,70 @@ class ZaloAutomation:
                     result['details'].append({
                         'phone': phone,
                         'name': name,
-                        'status': 'no_phone'
+                        'status': 'no_phone',
+                        'friend_status': None
                     })
                     continue
 
                 if callback:
                     callback(f"📤 [{idx}/{len(customer_list)}] Đang gửi đến: {name} ({phone})")
 
-                # Gửi tin nhắn
-                if self.send_message_to_phone(phone, message):
+                # Gửi tin nhắn với kiểm tra trạng thái
+                success, friend_status, error_msg = self.send_message_to_phone(phone, message, check_status=check_friend_status)
+
+                if success:
                     result['success'] += 1
+                    status_text = ""
+                    if friend_status == 'friend':
+                        status_text = " [Bạn bè]"
+                    elif friend_status == 'stranger':
+                        status_text = " [Người lạ]"
+
                     if callback:
-                        callback(f"✅ [{idx}/{len(customer_list)}] Thành công: {phone}")
+                        callback(f"✅ [{idx}/{len(customer_list)}] Thành công: {phone}{status_text}")
                     result['details'].append({
                         'phone': phone,
                         'name': name,
-                        'status': 'success'
+                        'status': 'success',
+                        'friend_status': friend_status
                     })
                 else:
                     result['failed'] += 1
-                    result['errors'].append(f"{phone}: Không thể gửi tin nhắn")
-                    if callback:
-                        callback(f"❌ [{idx}/{len(customer_list)}] Thất bại: {phone}")
-                    result['details'].append({
-                        'phone': phone,
-                        'name': name,
-                        'status': 'failed'
-                    })
+
+                    # Xử lý thông báo lỗi cụ thể
+                    if error_msg == 'not_registered':
+                        error_text = "Số điện thoại chưa đăng ký hoặc không cho phép tìm kiếm"
+                        if callback:
+                            callback(f"⚠️ [{idx}/{len(customer_list)}] {phone}: {error_text}")
+                        result['errors'].append(f"{phone}: {error_text}")
+                        result['details'].append({
+                            'phone': phone,
+                            'name': name,
+                            'status': 'not_registered',
+                            'friend_status': None
+                        })
+                    elif error_msg == 'not_found':
+                        error_text = "Không tìm thấy kết quả"
+                        if callback:
+                            callback(f"⚠️ [{idx}/{len(customer_list)}] {phone}: {error_text}")
+                        result['errors'].append(f"{phone}: {error_text}")
+                        result['details'].append({
+                            'phone': phone,
+                            'name': name,
+                            'status': 'not_found',
+                            'friend_status': None
+                        })
+                    else:
+                        error_text = error_msg or "Không thể gửi tin nhắn"
+                        if callback:
+                            callback(f"❌ [{idx}/{len(customer_list)}] Thất bại: {phone} - {error_text}")
+                        result['errors'].append(f"{phone}: {error_text}")
+                        result['details'].append({
+                            'phone': phone,
+                            'name': name,
+                            'status': 'failed',
+                            'friend_status': friend_status
+                        })
 
                 # Delay giữa các tin nhắn (thêm random vào delay)
                 if idx < len(customer_list):
@@ -694,7 +904,8 @@ class ZaloAutomation:
                 result['details'].append({
                     'phone': customer.get('phone', ''),
                     'name': customer.get('name', 'N/A'),
-                    'status': 'error'
+                    'status': 'error',
+                    'friend_status': None
                 })
 
         return result

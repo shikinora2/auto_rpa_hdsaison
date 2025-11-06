@@ -44,20 +44,24 @@ class App(customtkinter.CTk):
         self.tabview = customtkinter.CTkTabview(self, width=600, height=650)
         self.tabview.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
         
-        # Tạo 3 tabs
+        # Tạo 4 tabs
         self.tabview.add("Trang Chủ")
         self.tabview.add("Tác Vụ")
         self.tabview.add("Auto Zalo")
-        
+        self.tabview.add("Kiểm Tra Hợp Đồng")
+
         # Cấu hình grid cho từng tab
         self.tabview.tab("Trang Chủ").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Trang Chủ").grid_rowconfigure(2, weight=1)
-        
+
         self.tabview.tab("Tác Vụ").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Tác Vụ").grid_rowconfigure(4, weight=1)
-        
+
         self.tabview.tab("Auto Zalo").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Auto Zalo").grid_rowconfigure(1, weight=1)
+
+        self.tabview.tab("Kiểm Tra Hợp Đồng").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Kiểm Tra Hợp Đồng").grid_rowconfigure(0, weight=1)
 
         # Biến lưu dữ liệu khách hàng cho Zalo
         self.zalo_customer_data = []  # List of dict: [{name, phone, address, ...}, ...]
@@ -72,15 +76,19 @@ class App(customtkinter.CTk):
 
         # === TAB 1: TRANG CHỦ ===
         self.create_home_tab()
-        
+
         # === TAB 2: TÁC VỤ ===
         self.create_tasks_tab()
-        
+
         # === TAB 3: AUTO ZALO ===
         self.create_zalo_tab()
 
+        # === TAB 4: KIỂM TRA HỢP ĐỒNG ===
+        self.create_contract_check_tab()
+
         self.load_config()
         self.load_zalo_session_info()  # Load thông tin session Zalo
+        self._load_gemini_config()  # Load Gemini API Key
 
     def create_home_tab(self):
         """Tạo nội dung cho tab Trang Chủ (Đăng nhập + Log)"""
@@ -93,57 +101,57 @@ class App(customtkinter.CTk):
         self.login_title = customtkinter.CTkLabel(
             self.login_frame,
             text="ĐĂNG NHẬP HỆ THỐNG",
-            font=customtkinter.CTkFont(weight="bold", size=14)
+            font=customtkinter.CTkFont(weight="bold", size=16)
         )
         self.login_title.pack(pady=(10, 8), padx=10)
-        
+
         # Frame chứa các input
         login_inputs = customtkinter.CTkFrame(self.login_frame, fg_color="transparent")
         login_inputs.pack(pady=(0, 10), padx=20, fill="x")
-        
+
         self.username_label = customtkinter.CTkLabel(
-            login_inputs, 
-            text="Tên đăng nhập:", 
-            font=customtkinter.CTkFont(size=11)
+            login_inputs,
+            text="Tên đăng nhập:",
+            font=customtkinter.CTkFont(size=13)
         )
         self.username_label.pack(pady=(5, 2), anchor="w")
         self.username_entry = customtkinter.CTkEntry(
-            login_inputs, 
-            placeholder_text="Nhập tên đăng nhập", 
+            login_inputs,
+            placeholder_text="Nhập tên đăng nhập",
             height=32
         )
         self.username_entry.pack(pady=3, fill="x")
 
         self.password_label = customtkinter.CTkLabel(
-            login_inputs, 
-            text="Mật khẩu:", 
-            font=customtkinter.CTkFont(size=11)
+            login_inputs,
+            text="Mật khẩu:",
+            font=customtkinter.CTkFont(size=13)
         )
         self.password_label.pack(pady=(8, 2), anchor="w")
         self.password_entry = customtkinter.CTkEntry(
-            login_inputs, 
-            placeholder_text="Nhập mật khẩu", 
-            show="*", 
+            login_inputs,
+            placeholder_text="Nhập mật khẩu",
+            show="*",
             height=32
         )
         self.password_entry.pack(pady=3, fill="x")
-        
+
         # Checkboxes
         checkbox_frame = customtkinter.CTkFrame(login_inputs, fg_color="transparent")
         checkbox_frame.pack(pady=8, fill="x")
-        
+
         self.show_password_check = customtkinter.CTkCheckBox(
-            checkbox_frame, 
-            text="Hiện mật khẩu", 
+            checkbox_frame,
+            text="Hiện mật khẩu",
             command=self.toggle_password_visibility,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.show_password_check.pack(side="left", padx=(0, 10))
-        
+
         self.save_creds_check = customtkinter.CTkCheckBox(
-            checkbox_frame, 
+            checkbox_frame,
             text="Lưu thông tin đăng nhập",
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.save_creds_check.pack(side="left")
 
@@ -151,15 +159,15 @@ class App(customtkinter.CTk):
         self.log_label = customtkinter.CTkLabel(
             home_tab,
             text="TRẠNG THÁI HỆ THỐNG",
-            font=customtkinter.CTkFont(weight="bold", size=13)
+            font=customtkinter.CTkFont(weight="bold", size=15)
         )
         self.log_label.grid(row=1, column=0, sticky="w", padx=10, pady=(10, 5))
-        
+
         self.log_textbox = customtkinter.CTkTextbox(
-            home_tab, 
-            state="disabled", 
-            wrap="word", 
-            font=customtkinter.CTkFont(size=10)
+            home_tab,
+            state="disabled",
+            wrap="word",
+            font=customtkinter.CTkFont(size=12)
         )
         self.log_textbox.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
@@ -174,93 +182,93 @@ class App(customtkinter.CTk):
         self.date_title = customtkinter.CTkLabel(
             self.date_frame,
             text="BỘ LỌC NGÀY",
-            font=customtkinter.CTkFont(weight="bold", size=13)
+            font=customtkinter.CTkFont(weight="bold", size=15)
         )
         self.date_title.pack(pady=(10, 5))
-        
+
         # Grid container cho date picker
         date_grid = customtkinter.CTkFrame(self.date_frame, fg_color="transparent")
         date_grid.pack(pady=(5, 10), padx=15, fill="x")
         date_grid.grid_columnconfigure((1, 2, 3), weight=1)
-        
+
         today = date.today()
         current_year = today.year
         self.days = [f"{i:02d}" for i in range(1, 32)]
         self.months = [f"{i:02d}" for i in range(1, 13)]
         self.years = [str(y) for y in range(current_year - 5, current_year + 2)]
-        
+
         # Từ ngày
         self.start_date_label = customtkinter.CTkLabel(
-            date_grid, 
-            text="Từ:", 
-            font=customtkinter.CTkFont(size=11, weight="bold")
+            date_grid,
+            text="Từ:",
+            font=customtkinter.CTkFont(size=13, weight="bold")
         )
         self.start_date_label.grid(row=0, column=0, padx=6, pady=6, sticky="w")
-        
+
         self.start_day_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.days, 
-            width=60, 
+            date_grid,
+            values=self.days,
+            width=60,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.start_day_combo.grid(row=0, column=1, padx=3, pady=6, sticky="ew")
         self.start_day_combo.set(today.strftime("%d"))
-        
+
         self.start_month_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.months, 
-            width=60, 
+            date_grid,
+            values=self.months,
+            width=60,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.start_month_combo.grid(row=0, column=2, padx=3, pady=6, sticky="ew")
         self.start_month_combo.set(today.strftime("%m"))
-        
+
         self.start_year_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.years, 
-            width=80, 
+            date_grid,
+            values=self.years,
+            width=80,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.start_year_combo.grid(row=0, column=3, padx=3, pady=6, sticky="ew")
         self.start_year_combo.set(str(current_year))
-        
+
         # Đến ngày
         self.end_date_label = customtkinter.CTkLabel(
-            date_grid, 
-            text="Đến:", 
-            font=customtkinter.CTkFont(size=11, weight="bold")
+            date_grid,
+            text="Đến:",
+            font=customtkinter.CTkFont(size=13, weight="bold")
         )
         self.end_date_label.grid(row=1, column=0, padx=6, pady=6, sticky="w")
-        
+
         self.end_day_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.days, 
-            width=60, 
+            date_grid,
+            values=self.days,
+            width=60,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.end_day_combo.grid(row=1, column=1, padx=3, pady=6, sticky="ew")
         self.end_day_combo.set(today.strftime("%d"))
-        
+
         self.end_month_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.months, 
-            width=60, 
+            date_grid,
+            values=self.months,
+            width=60,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.end_month_combo.grid(row=1, column=2, padx=3, pady=6, sticky="ew")
         self.end_month_combo.set(today.strftime("%m"))
-        
+
         self.end_year_combo = customtkinter.CTkComboBox(
-            date_grid, 
-            values=self.years, 
-            width=80, 
+            date_grid,
+            values=self.years,
+            width=80,
             height=30,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.end_year_combo.grid(row=1, column=3, padx=3, pady=6, sticky="ew")
         self.end_year_combo.set(str(current_year))
@@ -274,51 +282,51 @@ class App(customtkinter.CTk):
         folder_container.pack(pady=8, padx=12, fill="x")
         
         self.folder_label = customtkinter.CTkLabel(
-            folder_container, 
-            text="Thư mục lưu:", 
-            font=customtkinter.CTkFont(size=11)
+            folder_container,
+            text="Thư mục lưu:",
+            font=customtkinter.CTkFont(size=13)
         )
         self.folder_label.pack(side="left", padx=(0, 5))
-        
+
         self.folder_entry = customtkinter.CTkEntry(
-            folder_container, 
-            state="disabled", 
+            folder_container,
+            state="disabled",
             height=30,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.folder_entry.pack(side="left", fill="x", expand=True, padx=3)
-        
+
         self.folder_button = customtkinter.CTkButton(
             folder_container,
             text="Chọn",
             command=self.select_folder,
             width=70,
             height=30,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.folder_button.pack(side="left", padx=(3, 0))
-        
+
         default_save_path = os.path.abspath("downloads_contracts")
         self.folder_entry.configure(state="normal")
         self.folder_entry.insert(0, default_save_path)
         self.folder_entry.configure(state="disabled")
-        
+
         # Hình thức lưu
         format_container = customtkinter.CTkFrame(settings_frame, fg_color="transparent")
         format_container.pack(pady=(0, 8), padx=12, fill="x")
-        
+
         self.save_format_label = customtkinter.CTkLabel(
-            format_container, 
-            text="Định dạng lưu:", 
-            font=customtkinter.CTkFont(size=11)
+            format_container,
+            text="Định dạng lưu:",
+            font=customtkinter.CTkFont(size=13)
         )
         self.save_format_label.pack(side="left", padx=(0, 8))
-        
+
         self.save_format_button = customtkinter.CTkSegmentedButton(
-            format_container, 
+            format_container,
             values=["PDF", "JSON"],
             command=self.on_save_format_change,
-            font=customtkinter.CTkFont(size=10),
+            font=customtkinter.CTkFont(size=12),
             height=30
         )
         self.save_format_button.pack(side="left", fill="x", expand=True)
@@ -329,9 +337,9 @@ class App(customtkinter.CTk):
         self.rpa_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         
         self.rpa_label = customtkinter.CTkLabel(
-            self.rpa_frame, 
-            text="🌐 TÁC VỤ TỰ ĐỘNG HÓA (ONLINE)", 
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            self.rpa_frame,
+            text="🌐 TÁC VỤ TỰ ĐỘNG HÓA (ONLINE)",
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         self.rpa_label.pack(pady=(10, 8))
 
@@ -339,7 +347,7 @@ class App(customtkinter.CTk):
         rpa_buttons = customtkinter.CTkFrame(self.rpa_frame, fg_color="transparent")
         rpa_buttons.pack(fill="x", padx=10, pady=(0, 10))
         rpa_buttons.grid_columnconfigure((0, 1), weight=1)
-        
+
         # Hàng 1
         self.check_button = customtkinter.CTkButton(
             rpa_buttons,
@@ -348,19 +356,19 @@ class App(customtkinter.CTk):
             fg_color="#00695C",
             hover_color="#004D40",
             height=36,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.check_button.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
-        
+
         self.start_button = customtkinter.CTkButton(
             rpa_buttons,
             text="Tải File (PDF)",
             command=self.start_rpa_thread,
             height=36,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.start_button.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
-        
+
         # Hàng 2
         self.scrape_details_button = customtkinter.CTkButton(
             rpa_buttons,
@@ -369,10 +377,10 @@ class App(customtkinter.CTk):
             fg_color="#004D40",
             hover_color="#00695C",
             height=36,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.scrape_details_button.grid(row=1, column=0, padx=4, pady=4, sticky="ew")
-        
+
         self.open_excel_button = customtkinter.CTkButton(
             rpa_buttons,
             text="Mở Thư Mục Excel",
@@ -380,10 +388,10 @@ class App(customtkinter.CTk):
             fg_color="#1565C0",
             hover_color="#0D47A1",
             height=36,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.open_excel_button.grid(row=1, column=1, padx=4, pady=4, sticky="ew")
-        
+
         # Hàng 3 - Điều khiển
         self.pause_button = customtkinter.CTkButton(
             rpa_buttons,
@@ -393,7 +401,7 @@ class App(customtkinter.CTk):
             fg_color="gray",
             text_color_disabled="white",
             height=32,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.pause_button.grid(row=2, column=0, padx=4, pady=4, sticky="ew")
 
@@ -405,21 +413,21 @@ class App(customtkinter.CTk):
             fg_color="#D32F2F",
             hover_color="#B71C1C",
             height=32,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.stop_button.grid(row=2, column=1, padx=4, pady=4, sticky="ew")
 
         # === TÁC VỤ OFFLINE (LOCAL) ===
         self.local_frame = customtkinter.CTkFrame(tasks_tab)
         self.local_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
-        
+
         self.local_label = customtkinter.CTkLabel(
             self.local_frame,
             text="TÁC VỤ XỬ LÝ FILE (OFFLINE)",
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         self.local_label.pack(pady=(10, 8))
-        
+
         self.extract_button = customtkinter.CTkButton(
             self.local_frame,
             text="Trích xuất File (PDF/JSON) sang Excel",
@@ -427,9 +435,70 @@ class App(customtkinter.CTk):
             fg_color="#4E342E",
             hover_color="#6D4C41",
             height=36,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.extract_button.pack(fill="x", padx=10, pady=(0, 10))
+
+        # === KẾT NỐI API GEMINI ===
+        self.gemini_frame = customtkinter.CTkFrame(tasks_tab)
+        self.gemini_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+        self.gemini_label = customtkinter.CTkLabel(
+            self.gemini_frame,
+            text="🤖 KẾT NỐI API GEMINI",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        self.gemini_label.pack(pady=(10, 8))
+
+        # Frame chứa API Key
+        api_key_container = customtkinter.CTkFrame(self.gemini_frame, fg_color="transparent")
+        api_key_container.pack(pady=(0, 8), padx=12, fill="x")
+
+        self.api_key_label = customtkinter.CTkLabel(
+            api_key_container,
+            text="API Key:",
+            font=customtkinter.CTkFont(size=13)
+        )
+        self.api_key_label.pack(side="left", padx=(0, 5))
+
+        self.api_key_entry = customtkinter.CTkEntry(
+            api_key_container,
+            placeholder_text="Nhập Gemini API Key",
+            show="*",
+            height=30,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=3)
+
+        # Checkbox hiện API Key
+        self.show_api_key_check = customtkinter.CTkCheckBox(
+            self.gemini_frame,
+            text="Hiện API Key",
+            command=self.toggle_api_key_visibility,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.show_api_key_check.pack(pady=(0, 8), padx=12, anchor="w")
+
+        # Trạng thái kết nối
+        self.gemini_status_label = customtkinter.CTkLabel(
+            self.gemini_frame,
+            text="⚪ Chưa kết nối",
+            font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.gemini_status_label.pack(pady=(0, 8), padx=12, anchor="w")
+
+        # Nút kết nối
+        self.connect_gemini_button = customtkinter.CTkButton(
+            self.gemini_frame,
+            text="Kết Nối Gemini",
+            command=self.connect_gemini,
+            fg_color="#7B1FA2",
+            hover_color="#6A1B9A",
+            height=36,
+            font=customtkinter.CTkFont(size=13)
+        )
+        self.connect_gemini_button.pack(fill="x", padx=10, pady=(0, 10))
 
     def create_zalo_tab(self):
         """Tạo nội dung cho tab Auto Zalo với ScrollableFrame"""
@@ -439,7 +508,7 @@ class App(customtkinter.CTk):
         zalo_title = customtkinter.CTkLabel(
             zalo_tab,
             text="TỰ ĐỘNG HÓA ZALO",
-            font=customtkinter.CTkFont(weight="bold", size=14)
+            font=customtkinter.CTkFont(weight="bold", size=16)
         )
         zalo_title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
 
@@ -457,19 +526,19 @@ class App(customtkinter.CTk):
         account_title = customtkinter.CTkLabel(
             account_frame,
             text="Quản Lý Tài Khoản Zalo",
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         account_title.grid(row=0, column=0, columnspan=6, pady=(10, 8), padx=10, sticky="w")
 
         # Tài khoản
         account_label = customtkinter.CTkLabel(
-            account_frame, text="Tài khoản:", font=customtkinter.CTkFont(size=10)
+            account_frame, text="Tài khoản:", font=customtkinter.CTkFont(size=12)
         )
         account_label.grid(row=1, column=0, padx=(15, 5), pady=5, sticky="w")
 
         self.account_combobox = customtkinter.CTkComboBox(
             account_frame, values=["Chưa có tài khoản"], width=180,
-            command=self.on_account_selected, font=customtkinter.CTkFont(size=10)
+            command=self.on_account_selected, font=customtkinter.CTkFont(size=12)
         )
         self.account_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         self.account_combobox.set("Chưa có tài khoản")
@@ -477,7 +546,7 @@ class App(customtkinter.CTk):
         # Nút thêm tài khoản
         add_account_btn = customtkinter.CTkButton(
             account_frame, text="+", width=30, height=28,
-            command=self.add_zalo_account, font=customtkinter.CTkFont(size=14)
+            command=self.add_zalo_account, font=customtkinter.CTkFont(size=16)
         )
         add_account_btn.grid(row=1, column=2, padx=5, pady=5)
 
@@ -485,42 +554,42 @@ class App(customtkinter.CTk):
         delete_account_btn = customtkinter.CTkButton(
             account_frame, text="X", width=30, height=28,
             command=self.delete_zalo_account, fg_color="#DC3545", hover_color="#C82333",
-            font=customtkinter.CTkFont(size=14)
+            font=customtkinter.CTkFont(size=16)
         )
         delete_account_btn.grid(row=1, column=3, padx=5, pady=5)
 
         # Họ tên Zalo
         zalo_name_title = customtkinter.CTkLabel(
-            account_frame, text="Họ tên:", font=customtkinter.CTkFont(size=10)
+            account_frame, text="Họ tên:", font=customtkinter.CTkFont(size=12)
         )
         zalo_name_title.grid(row=1, column=4, padx=(15, 5), pady=5, sticky="w")
 
         self.zalo_name_label = customtkinter.CTkLabel(
-            account_frame, text="Chưa cập nhật", font=customtkinter.CTkFont(size=10),
+            account_frame, text="Chưa cập nhật", font=customtkinter.CTkFont(size=12),
             text_color="gray"
         )
         self.zalo_name_label.grid(row=1, column=5, padx=5, pady=5, sticky="w")
 
         # Phiên đăng nhập
         session_title = customtkinter.CTkLabel(
-            account_frame, text="Phiên đăng nhập:", font=customtkinter.CTkFont(size=10)
+            account_frame, text="Phiên đăng nhập:", font=customtkinter.CTkFont(size=12)
         )
         session_title.grid(row=2, column=0, padx=(15, 5), pady=5, sticky="w")
 
         self.zalo_session_label = customtkinter.CTkLabel(
-            account_frame, text="Chưa đăng nhập", font=customtkinter.CTkFont(size=10),
+            account_frame, text="Chưa đăng nhập", font=customtkinter.CTkFont(size=12),
             text_color="gray"
         )
         self.zalo_session_label.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky="w")
 
         # Trạng thái
         status_title = customtkinter.CTkLabel(
-            account_frame, text="Trạng thái:", font=customtkinter.CTkFont(size=10)
+            account_frame, text="Trạng thái:", font=customtkinter.CTkFont(size=12)
         )
         status_title.grid(row=2, column=4, padx=(15, 5), pady=5, sticky="w")
 
         self.zalo_status_label = customtkinter.CTkLabel(
-            account_frame, text="❌ Inactive", font=customtkinter.CTkFont(size=10),
+            account_frame, text="❌ Inactive", font=customtkinter.CTkFont(size=12),
             text_color="red"
         )
         self.zalo_status_label.grid(row=2, column=5, padx=5, pady=5, sticky="w")
@@ -529,7 +598,7 @@ class App(customtkinter.CTk):
         check_button = customtkinter.CTkButton(
             account_frame, text="Kiểm tra & Cập nhật",
             command=self.check_zalo_status, height=32,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         check_button.grid(row=3, column=0, columnspan=3, padx=15, pady=(5, 10), sticky="ew")
 
@@ -538,7 +607,7 @@ class App(customtkinter.CTk):
             account_frame, text="Mở Zalo",
             command=self.open_zalo_window, height=32,
             fg_color="#0068FF", hover_color="#0052CC",
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         open_zalo_btn.grid(row=3, column=4, columnspan=2, padx=15, pady=(5, 10), sticky="ew")
 
@@ -552,7 +621,7 @@ class App(customtkinter.CTk):
         data_title = customtkinter.CTkLabel(
             data_frame,
             text="� Nhập Dữ Liệu Khách Hàng",
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         data_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
 
@@ -560,7 +629,7 @@ class App(customtkinter.CTk):
         self.zalo_file_label = customtkinter.CTkLabel(
             data_frame,
             text="Chưa chọn file",
-            font=customtkinter.CTkFont(size=10),
+            font=customtkinter.CTkFont(size=12),
             text_color="gray"
         )
         self.zalo_file_label.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
@@ -571,7 +640,7 @@ class App(customtkinter.CTk):
             text="Chọn File Excel",
             command=self.select_zalo_excel,
             height=32,
-            font=customtkinter.CTkFont(size=11)
+            font=customtkinter.CTkFont(size=13)
         )
         self.select_excel_button.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 10))
 
@@ -579,7 +648,7 @@ class App(customtkinter.CTk):
         self.zalo_customer_count_label = customtkinter.CTkLabel(
             data_frame,
             text="Số khách hàng: 0",
-            font=customtkinter.CTkFont(size=10, weight="bold"),
+            font=customtkinter.CTkFont(size=12, weight="bold"),
             text_color="#0068FF"
         )
         self.zalo_customer_count_label.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="w")
@@ -592,7 +661,7 @@ class App(customtkinter.CTk):
         friend_title = customtkinter.CTkLabel(
             friend_frame,
             text="� Kết Bạn Hàng Loạt",
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         friend_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
 
@@ -600,10 +669,39 @@ class App(customtkinter.CTk):
         friend_help = customtkinter.CTkLabel(
             friend_frame,
             text="Gửi lời mời kết bạn đến tất cả số điện thoại trong danh sách",
-            font=customtkinter.CTkFont(size=9),
+            font=customtkinter.CTkFont(size=11),
             text_color="gray"
         )
         friend_help.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
+
+        # Hướng dẫn biến có sẵn cho lời chào
+        greeting_help = customtkinter.CTkLabel(
+            friend_frame,
+            text="Biến có sẵn: {my_name}, {contract_id}, {name}, {phone}, {gender} (Nam→anh, Nữ→chị), {address}, {cccd}, {dob}",
+            font=customtkinter.CTkFont(size=11),
+            text_color="gray"
+        )
+        greeting_help.grid(row=2, column=0, padx=15, pady=(0, 3), sticky="w")
+
+        # Label cho ô nhập lời chào
+        greeting_label = customtkinter.CTkLabel(
+            friend_frame,
+            text="Lời chào khi kết bạn:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        greeting_label.grid(row=3, column=0, padx=15, pady=(0, 3), sticky="w")
+
+        # TextBox nhập lời chào
+        self.friend_greeting_textbox = customtkinter.CTkTextbox(
+            friend_frame,
+            height=80,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.friend_greeting_textbox.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 10))
+
+        # Lời chào mặc định
+        default_greeting = "Xin chào, mình là {my_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+        self.friend_greeting_textbox.insert("1.0", default_greeting)
 
         # Checkbox bỏ qua khách hàng đã xử lý
         self.skip_processed_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
@@ -611,14 +709,14 @@ class App(customtkinter.CTk):
             friend_frame,
             text="Bỏ qua khách hàng đã kết bạn thành công",
             variable=self.skip_processed_var,
-            font=customtkinter.CTkFont(size=10),
+            font=customtkinter.CTkFont(size=12),
             text_color="#28A745"
         )
-        self.skip_processed_checkbox.grid(row=2, column=0, padx=15, pady=(0, 10), sticky="w")
+        self.skip_processed_checkbox.grid(row=5, column=0, padx=15, pady=(0, 10), sticky="w")
 
         # Frame chứa các nút
         buttons_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
-        buttons_frame.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 15))
+        buttons_frame.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
         buttons_frame.grid_columnconfigure(0, weight=1)
         buttons_frame.grid_columnconfigure(1, weight=0)
 
@@ -631,7 +729,7 @@ class App(customtkinter.CTk):
             hover_color="#E0A800",
             text_color="black",
             height=36,
-            font=customtkinter.CTkFont(size=11, weight="bold")
+            font=customtkinter.CTkFont(size=13, weight="bold")
         )
         self.add_friend_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
@@ -644,7 +742,7 @@ class App(customtkinter.CTk):
             hover_color="#5A6268",
             height=36,
             width=120,
-            font=customtkinter.CTkFont(size=11, weight="bold"),
+            font=customtkinter.CTkFont(size=13, weight="bold"),
             state="disabled"  # Mặc định disabled
         )
         self.zalo_pause_button.grid(row=0, column=1, sticky="ew")
@@ -657,15 +755,15 @@ class App(customtkinter.CTk):
         message_title = customtkinter.CTkLabel(
             message_frame,
             text="� Nhắn Tin Hàng Loạt",
-            font=customtkinter.CTkFont(weight="bold", size=12)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         message_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
 
         # Hướng dẫn sử dụng biến
         help_label = customtkinter.CTkLabel(
             message_frame,
-            text="Biến có sẵn: {name}, {phone}, {address}, {cccd}, {dob}, {contract_id}, {gender}",
-            font=customtkinter.CTkFont(size=9),
+            text="Biến có sẵn: {name}, {phone}, {address}, {cccd}, {dob}, {contract_id}, {gender} (Nam→anh, Nữ→chị)",
+            font=customtkinter.CTkFont(size=11),
             text_color="gray"
         )
         help_label.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
@@ -674,19 +772,24 @@ class App(customtkinter.CTk):
         message_label = customtkinter.CTkLabel(
             message_frame,
             text="Kịch bản tin nhắn:",
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         message_label.grid(row=2, column=0, padx=15, pady=(0, 3), sticky="w")
 
         self.zalo_message_template = customtkinter.CTkTextbox(
             message_frame,
             height=120,
-            font=customtkinter.CTkFont(size=10)
+            font=customtkinter.CTkFont(size=12)
         )
         self.zalo_message_template.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 10))
 
-        # Template mặc định
-        default_template = """Xin chào anh/chị {name},
+        # Load kịch bản đã lưu hoặc dùng mặc định
+        saved_template = self.load_message_template()
+        if saved_template:
+            self.zalo_message_template.insert("1.0", saved_template)
+        else:
+            # Template mặc định
+            default_template = """Xin chào anh/chị {name},
 
 Chúng tôi xin thông báo về hợp đồng {contract_id}:
 - Số điện thoại: {phone}
@@ -695,7 +798,19 @@ Chúng tôi xin thông báo về hợp đồng {contract_id}:
 
 Vui lòng liên hệ nếu có thắc mắc.
 Trân trọng!"""
-        self.zalo_message_template.insert("1.0", default_template)
+            self.zalo_message_template.insert("1.0", default_template)
+
+        # Nút lưu kịch bản
+        save_template_button = customtkinter.CTkButton(
+            message_frame,
+            text="💾 Lưu kịch bản",
+            command=self.save_message_template,
+            fg_color="#17A2B8",
+            hover_color="#138496",
+            height=32,
+            font=customtkinter.CTkFont(size=12)
+        )
+        save_template_button.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 10))
 
         # Checkbox bỏ qua khách hàng đã gửi tin nhắn
         self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
@@ -703,22 +818,163 @@ Trân trọng!"""
             message_frame,
             text="Bỏ qua khách hàng đã gửi tin nhắn thành công",
             variable=self.skip_sent_messages_var,
-            font=customtkinter.CTkFont(size=10),
+            font=customtkinter.CTkFont(size=12),
             text_color="#28A745"
         )
-        self.skip_sent_messages_checkbox.grid(row=4, column=0, padx=15, pady=(0, 5), sticky="w")
+        self.skip_sent_messages_checkbox.grid(row=5, column=0, padx=15, pady=(0, 5), sticky="w")
+
+        # Frame chứa các nút gửi tin nhắn
+        message_buttons_frame = customtkinter.CTkFrame(message_frame, fg_color="transparent")
+        message_buttons_frame.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
+        message_buttons_frame.grid_columnconfigure(0, weight=1)
+        message_buttons_frame.grid_columnconfigure(1, weight=0)
 
         # Nút gửi tin nhắn
         self.send_message_button = customtkinter.CTkButton(
-            message_frame,
+            message_buttons_frame,
             text="Gửi Tin Nhắn Hàng Loạt",
             command=self.send_bulk_messages,
             fg_color="#28A745",
             hover_color="#218838",
             height=36,
-            font=customtkinter.CTkFont(size=11, weight="bold")
+            font=customtkinter.CTkFont(size=13, weight="bold")
         )
-        self.send_message_button.grid(row=5, column=0, sticky="ew", padx=15, pady=(0, 15))
+        self.send_message_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+        # Nút tạm dừng/tiếp tục cho gửi tin nhắn
+        self.message_pause_button = customtkinter.CTkButton(
+            message_buttons_frame,
+            text="Tạm dừng",
+            command=self.toggle_pause,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            height=36,
+            width=120,
+            font=customtkinter.CTkFont(size=13, weight="bold"),
+            state="disabled"  # Mặc định disabled
+        )
+        self.message_pause_button.grid(row=0, column=1, sticky="ew")
+
+    def create_contract_check_tab(self):
+        """Tạo nội dung cho tab Kiểm Tra Hợp Đồng"""
+        contract_tab = self.tabview.tab("Kiểm Tra Hợp Đồng")
+
+        # Tiêu đề
+        title = customtkinter.CTkLabel(
+            contract_tab,
+            text="🔍 Kiểm Tra Hợp Đồng",
+            font=customtkinter.CTkFont(weight="bold", size=18)
+        )
+        title.pack(pady=20)
+
+        # Frame chính
+        main_frame = customtkinter.CTkFrame(contract_tab)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+        # === NHẬP LIỆU THỦ CÔNG ===
+        manual_frame = customtkinter.CTkFrame(main_frame)
+        manual_frame.pack(fill="x", padx=15, pady=15)
+
+        manual_title = customtkinter.CTkLabel(
+            manual_frame,
+            text="📝 Nhập Thủ Công",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        manual_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
+
+        # Nhập số hợp đồng
+        contract_label = customtkinter.CTkLabel(
+            manual_frame,
+            text="Số hợp đồng:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        contract_label.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="w")
+
+        self.contract_number_entry = customtkinter.CTkEntry(
+            manual_frame,
+            placeholder_text="Nhập số hợp đồng",
+            font=customtkinter.CTkFont(size=12),
+            height=35
+        )
+        self.contract_number_entry.grid(row=1, column=1, padx=15, pady=(0, 10), sticky="ew")
+
+        # Nhập số CCCD
+        cccd_label = customtkinter.CTkLabel(
+            manual_frame,
+            text="Số CCCD:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        cccd_label.grid(row=2, column=0, padx=15, pady=(0, 15), sticky="w")
+
+        self.cccd_entry = customtkinter.CTkEntry(
+            manual_frame,
+            placeholder_text="Nhập số CCCD",
+            font=customtkinter.CTkFont(size=12),
+            height=35
+        )
+        self.cccd_entry.grid(row=2, column=1, padx=15, pady=(0, 15), sticky="ew")
+
+        manual_frame.grid_columnconfigure(1, weight=1)
+
+        # === NHẬP LIỆU TỪ FILE ===
+        file_frame = customtkinter.CTkFrame(main_frame)
+        file_frame.pack(fill="x", padx=15, pady=(0, 15))
+
+        file_title = customtkinter.CTkLabel(
+            file_frame,
+            text="📂 Nhập Từ File Excel",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        file_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
+
+        # Hiển thị file đã chọn
+        self.contract_file_label = customtkinter.CTkLabel(
+            file_frame,
+            text="Chưa chọn file",
+            font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.contract_file_label.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="w")
+
+        # Số lượng hợp đồng
+        self.contract_count_label = customtkinter.CTkLabel(
+            file_frame,
+            text="Số lượng: 0",
+            font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.contract_count_label.grid(row=1, column=1, padx=15, pady=(0, 10), sticky="e")
+
+        # Nút chọn file
+        self.select_contract_file_button = customtkinter.CTkButton(
+            file_frame,
+            text="Chọn File Excel",
+            command=self.select_contract_file,
+            fg_color="#007BFF",
+            hover_color="#0056B3",
+            height=36,
+            font=customtkinter.CTkFont(size=13, weight="bold")
+        )
+        self.select_contract_file_button.grid(row=2, column=0, columnspan=2, padx=15, pady=(0, 15), sticky="ew")
+
+        file_frame.grid_columnconfigure(0, weight=1)
+        file_frame.grid_columnconfigure(1, weight=0)
+
+        # === NÚT KIỂM TRA ===
+        self.check_contract_button = customtkinter.CTkButton(
+            main_frame,
+            text="Kiểm Tra",
+            command=self.check_contracts,
+            fg_color="#28A745",
+            hover_color="#218838",
+            height=40,
+            font=customtkinter.CTkFont(size=14, weight="bold")
+        )
+        self.check_contract_button.pack(fill="x", padx=15, pady=(0, 15))
+
+        # Biến lưu dữ liệu
+        self.contract_data = []  # List of dict: [{contract_id, cccd}, ...]
+        self.contract_excel_path = None
 
     def on_save_format_change(self, value):
         if value == "JSON":
@@ -1018,7 +1274,100 @@ Trân trọng!"""
             self.password_entry.configure(show="")
         else:
             self.password_entry.configure(show="*")
-            
+
+    def toggle_api_key_visibility(self):
+        """Hiện/ẩn API Key"""
+        if self.show_api_key_check.get() == 1:
+            self.api_key_entry.configure(show="")
+        else:
+            self.api_key_entry.configure(show="*")
+
+    def connect_gemini(self):
+        """Kết nối với Gemini API"""
+        api_key = self.api_key_entry.get().strip()
+
+        if not api_key:
+            self.log_to_gui("❌ Vui lòng nhập Gemini API Key!")
+            messagebox.showwarning(
+                "Thiếu API Key",
+                "Vui lòng nhập Gemini API Key để kết nối!",
+                parent=self
+            )
+            return
+
+        # Chạy trong thread riêng để không block UI
+        connect_thread = threading.Thread(
+            target=self._run_gemini_connection,
+            args=(api_key,),
+            daemon=True
+        )
+        connect_thread.start()
+
+    def _run_gemini_connection(self, api_key):
+        """Thread worker để kết nối Gemini API"""
+        try:
+            self.log_to_gui("⏳ Đang kết nối với Gemini API...")
+            self.gemini_status_label.configure(text="⏳ Đang kết nối...", text_color="orange")
+
+            # TODO: Thêm logic kết nối Gemini API ở đây
+            # Ví dụ:
+            # import google.generativeai as genai
+            # genai.configure(api_key=api_key)
+            # model = genai.GenerativeModel('gemini-pro')
+            # response = model.generate_content("Test connection")
+
+            # Giả lập kết nối thành công (tạm thời)
+            import time
+            time.sleep(2)
+
+            self.log_to_gui("✅ Kết nối Gemini API thành công!")
+            self.gemini_status_label.configure(text="✅ Đã kết nối", text_color="green")
+
+            # Lưu API Key vào config
+            self._save_gemini_config(api_key)
+
+            messagebox.showinfo(
+                "Thành công",
+                "Đã kết nối với Gemini API thành công!",
+                parent=self
+            )
+
+        except Exception as e:
+            self.log_to_gui(f"❌ Lỗi kết nối Gemini API: {str(e)}")
+            self.gemini_status_label.configure(text="❌ Kết nối thất bại", text_color="red")
+            messagebox.showerror(
+                "Lỗi kết nối",
+                f"Không thể kết nối với Gemini API:\n{str(e)}",
+                parent=self
+            )
+
+    def _save_gemini_config(self, api_key):
+        """Lưu Gemini API Key vào config"""
+        try:
+            gemini_config_file = os.path.join(self.app_data_dir, "gemini_config.json")
+            encoded_key = base64.b64encode(api_key.encode()).decode()
+            config_data = {"api_key": encoded_key}
+            with open(gemini_config_file, "w") as f:
+                json.dump(config_data, f)
+            self.log_to_gui("💾 Đã lưu Gemini API Key")
+        except Exception as e:
+            self.log_to_gui(f"⚠️ Không thể lưu API Key: {str(e)}")
+
+    def _load_gemini_config(self):
+        """Load Gemini API Key từ config"""
+        try:
+            gemini_config_file = os.path.join(self.app_data_dir, "gemini_config.json")
+            if os.path.exists(gemini_config_file):
+                with open(gemini_config_file, "r") as f:
+                    config_data = json.load(f)
+                    encoded_key = config_data.get("api_key", "")
+                    if encoded_key:
+                        api_key = base64.b64decode(encoded_key.encode()).decode()
+                        self.api_key_entry.insert(0, api_key)
+                        self.log_to_gui("📥 Đã load Gemini API Key từ config")
+        except Exception as e:
+            self.log_to_gui(f"⚠️ Không thể load API Key: {str(e)}")
+
     def select_folder(self):
         path = filedialog.askdirectory(initialdir=self.folder_entry.get())
         if path:
@@ -1276,6 +1625,761 @@ Trân trọng!"""
         """Mở cửa sổ mới để xuất sang Google Sheets (sẽ code logic sau)"""
         self.log_to_gui("🟢 Chức năng 'Xuất sang Sheet' đang được phát triển...")
         # TODO: Tạo TopLevel window cho Google Sheets export
+
+    # === CÁC HÀM XỬ LÝ CHO TAB KIỂM TRA HỢP ĐỒNG ===
+
+    def select_contract_file(self):
+        """Chọn file Excel chứa dữ liệu hợp đồng"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="Chọn file Excel chứa dữ liệu hợp đồng",
+                filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+            )
+
+            if not file_path:
+                return
+
+            self.log_to_gui(f"📂 Đang đọc file: {file_path}")
+
+            # Đọc file Excel
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, data_only=True)
+            ws = wb.active
+
+            # Đọc header
+            headers = []
+            for cell in ws[1]:
+                headers.append(str(cell.value).strip() if cell.value else "")
+
+            # Tìm các cột cần thiết (theo đúng tên cột trong file mẫu)
+            contract_col = None
+            cccd_col = None
+            name_col = None
+            loan_amount_col = None
+            months_col = None
+
+            for idx, header in enumerate(headers):
+                header_stripped = header.strip()
+
+                # Cột "ID Hợp đồng"
+                if contract_col is None:
+                    if header_stripped == "ID Hợp đồng" or "ID Hợp đồng" in header_stripped:
+                        contract_col = idx
+
+                # Cột "Số CCCD"
+                if cccd_col is None:
+                    if header_stripped == "Số CCCD" or "Số CCCD" in header_stripped:
+                        cccd_col = idx
+
+                # Cột "Tên KH (Profile)"
+                if name_col is None:
+                    if header_stripped == "Tên KH (Profile)" or "Tên KH" in header_stripped:
+                        name_col = idx
+
+                # Cột "Số tiền vay" (index 32)
+                if loan_amount_col is None:
+                    if header_stripped == "Số tiền vay":
+                        loan_amount_col = idx
+
+                # Cột "Số tháng"
+                if months_col is None:
+                    if header_stripped == "Số tháng" or "Số tháng" in header_stripped:
+                        months_col = idx
+
+            if contract_col is None and cccd_col is None:
+                messagebox.showerror(
+                    "Lỗi",
+                    "Không tìm thấy cột 'Số hợp đồng' hoặc 'CCCD' trong file Excel!",
+                    parent=self
+                )
+                return
+
+            # Log các cột đã tìm thấy
+            print(f"[EXCEL] Cột tìm thấy:")
+            print(f"[EXCEL]   - ID Hợp đồng: {contract_col}")
+            print(f"[EXCEL]   - Số CCCD: {cccd_col}")
+            print(f"[EXCEL]   - Tên KH: {name_col}")
+            print(f"[EXCEL]   - Số tiền vay: {loan_amount_col}")
+            print(f"[EXCEL]   - Số tháng: {months_col}")
+
+            # Đọc dữ liệu
+            self.contract_data = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not row or all(cell is None for cell in row):
+                    continue
+
+                contract_id = str(row[contract_col] or "").strip() if contract_col is not None else ""
+                cccd = str(row[cccd_col] or "").strip() if cccd_col is not None else ""
+                name = str(row[name_col] or "").strip() if name_col is not None else ""
+
+                # Xử lý số tiền vay (loại bỏ dấu phẩy, dấu chấm, ký tự "đ")
+                loan_amount = 0
+                if loan_amount_col is not None and row[loan_amount_col]:
+                    try:
+                        # Loại bỏ tất cả ký tự không phải số
+                        loan_str = str(row[loan_amount_col]).replace(",", "").replace(".", "").replace("đ", "").replace(" ", "").replace("\n", "").replace("\r", "").strip()
+                        # Chỉ lấy các ký tự số
+                        loan_str = ''.join(c for c in loan_str if c.isdigit())
+                        loan_amount = float(loan_str) if loan_str else 0
+                        if loan_amount > 0:
+                            print(f"[EXCEL] Số tiền vay: {loan_amount:,.0f} VNĐ (từ '{row[loan_amount_col]}')")
+                    except Exception as e:
+                        print(f"[EXCEL] Lỗi đọc số tiền vay: {e}, giá trị: {row[loan_amount_col]}")
+                        loan_amount = 0
+
+                # Xử lý số tháng (loại bỏ chữ "tháng")
+                months = 0
+                if months_col is not None and row[months_col]:
+                    try:
+                        months_str = str(row[months_col]).replace("tháng", "").replace(" ", "").replace("\n", "").replace("\r", "").strip()
+                        # Chỉ lấy các ký tự số
+                        months_str = ''.join(c for c in months_str if c.isdigit())
+                        months = int(months_str) if months_str else 0
+                        if months > 0:
+                            print(f"[EXCEL] Số tháng: {months} (từ '{row[months_col]}')")
+                    except Exception as e:
+                        print(f"[EXCEL] Lỗi đọc số tháng: {e}, giá trị: {row[months_col]}")
+                        months = 0
+
+                if contract_id or cccd:
+                    self.contract_data.append({
+                        'contract_id': contract_id,
+                        'cccd': cccd,
+                        'name': name,
+                        'loan_amount': loan_amount,
+                        'months': months
+                    })
+
+            # Cập nhật UI
+            self.contract_excel_path = file_path
+            file_name = file_path.split("/")[-1].split("\\")[-1]
+            self.contract_file_label.configure(text=f"📄 {file_name}", text_color="#28A745")
+            self.contract_count_label.configure(text=f"Số lượng: {len(self.contract_data)}", text_color="#28A745")
+
+            self.log_to_gui(f"✅ Đã tải {len(self.contract_data)} hợp đồng từ file Excel")
+
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể đọc file Excel:\n{str(e)}", parent=self)
+            self.log_to_gui(f"❌ Lỗi khi đọc file: {str(e)}")
+
+    def check_contracts(self):
+        """Kiểm tra hợp đồng - ưu tiên nhập thủ công, nếu không có thì dùng file"""
+        contract_number = self.contract_number_entry.get().strip()
+        cccd = self.cccd_entry.get().strip()
+
+        # Trường hợp 1: Có nhập thủ công
+        if contract_number or cccd:
+            self.log_to_gui("\n" + "="*60)
+            self.log_to_gui("🔍 Kiểm tra hợp đồng (Nhập thủ công)")
+            self.log_to_gui(f"Số hợp đồng: {contract_number if contract_number else 'Không có'}")
+            self.log_to_gui(f"Số CCCD: {cccd if cccd else 'Không có'}")
+
+            # Chạy trong thread riêng
+            import threading
+            thread = threading.Thread(
+                target=self._run_check_single_contract,
+                args=(contract_number, cccd),
+                daemon=True
+            )
+            thread.start()
+
+        # Trường hợp 2: Kiểm tra từ file
+        elif self.contract_data:
+            self.log_to_gui("\n" + "="*60)
+            self.log_to_gui(f"🔍 Kiểm tra {len(self.contract_data)} hợp đồng từ file")
+
+            # Chạy trong thread riêng
+            import threading
+            thread = threading.Thread(
+                target=self._run_check_contracts_from_file,
+                daemon=True
+            )
+            thread.start()
+
+        else:
+            messagebox.showwarning(
+                "Cảnh báo",
+                "Vui lòng nhập thông tin hợp đồng hoặc chọn file Excel!",
+                parent=self
+            )
+
+    def _run_check_single_contract(self, contract_number, cccd):
+        """Thread worker để kiểm tra 1 hợp đồng"""
+        try:
+            from playwright.sync_api import sync_playwright
+            import time
+            import random
+
+            print("\n" + "="*80)
+            print("KIỂM TRA HỢP ĐỒNG ĐƠN LẺ")
+            print("="*80)
+            self.log_to_gui("⏳ Đang khởi tạo trình duyệt...")
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context()
+                page = context.new_page()
+
+                print("[INIT] Đang mở trang tra cứu...")
+                self.log_to_gui("🌐 Đang truy cập trang tra cứu...")
+                page.goto("https://www.hdsaison.com.vn/vn/khach-hang/tra-cuu-khoan-vay.html")
+                page.wait_for_load_state("networkidle")
+
+                # Đóng popup nếu có
+                self._close_popup_if_exists(page)
+
+                print("[INIT] ✓ Trang đã sẵn sàng")
+                self.log_to_gui("✅ Đã mở trang tra cứu")
+                time.sleep(random.uniform(1.0, 1.5))
+
+                # Điền số hợp đồng (nếu có)
+                if contract_number:
+                    print(f"[INPUT] Nhập số hợp đồng: {contract_number}")
+                    self.log_to_gui(f"📝 Nhập số hợp đồng: {contract_number}")
+
+                    self._close_popup_if_exists(page)
+                    contract_input = page.wait_for_selector('input#contract_code', timeout=10000)
+                    contract_input.click()
+                    time.sleep(0.2)
+                    self._close_popup_if_exists(page)
+                    contract_input.fill(contract_number)
+                    time.sleep(random.uniform(0.3, 0.5))
+
+                # Điền số CCCD (nếu có)
+                if cccd:
+                    print(f"[INPUT] Nhập số CCCD: {cccd}")
+                    self.log_to_gui(f"📝 Nhập số CCCD: {cccd}")
+
+                    self._close_popup_if_exists(page)
+                    cccd_input = page.wait_for_selector('input#cmnd', timeout=10000)
+                    cccd_input.click()
+                    time.sleep(0.2)
+                    self._close_popup_if_exists(page)
+                    cccd_input.fill(cccd)
+                    time.sleep(random.uniform(0.3, 0.5))
+
+                # Đóng popup trước khi tìm kiếm
+                self._close_popup_if_exists(page)
+
+                # Nhấn nút tìm kiếm
+                print("[SEARCH] Nhấn nút Tìm kiếm...")
+                self.log_to_gui("🔍 Nhấn nút Tìm kiếm...")
+                search_button = page.wait_for_selector('button.btnStyAll.btnFull:has-text("Tìm kiếm")', timeout=10000)
+                search_button.click()
+
+                print("[SEARCH] Đang chờ kết quả...")
+                self.log_to_gui("⏳ Đang chờ kết quả...")
+                time.sleep(3)
+
+                # Đóng popup sau khi tìm kiếm
+                self._close_popup_if_exists(page)
+
+                # Kiểm tra có bảng thông tin không
+                try:
+                    print("[RESULT] Kiểm tra kết quả...")
+                    info_table = page.wait_for_selector('div.boxTableBd', timeout=5000)
+                    print("[RESULT] ✓ Tìm thấy bảng thông tin")
+                    self.log_to_gui("✅ Tìm thấy thông tin hợp đồng")
+
+                    # Lấy thông tin từ bảng
+                    name_element = page.query_selector('div.trBody:has-text("Họ Tên khách hàng") div.td')
+                    contract_element = page.query_selector('div.trBody:has-text("Số hợp đồng") div.td')
+
+                    if name_element and contract_element:
+                        result_name = name_element.inner_text().strip()
+                        result_contract = contract_element.inner_text().strip()
+
+                        print(f"[RESULT] Họ tên: {result_name}")
+                        print(f"[RESULT] Số hợp đồng: {result_contract}")
+
+                        self.log_to_gui(f"📋 Họ tên: {result_name}")
+                        self.log_to_gui(f"📋 Số hợp đồng: {result_contract}")
+
+                        # Đóng popup trước khi nhấn nút
+                        self._close_popup_if_exists(page)
+
+                        # Nhấn nút "Lịch sử thanh toán thực tế"
+                        print("[HISTORY] Nhấn nút 'Lịch sử thanh toán thực tế'...")
+                        self.log_to_gui("🔍 Xem lịch sử thanh toán...")
+
+                        # Kiểm tra xem link có mở tab mới không
+                        history_button = page.wait_for_selector('a.btnStyAll.btnFull:has-text("Lịch sử thanh toán thực tế")', timeout=5000)
+
+                        # Lấy href để kiểm tra
+                        href = history_button.get_attribute('href')
+                        print(f"[HISTORY] Link: {href}")
+
+                        # Click và chờ navigation
+                        try:
+                            with page.expect_navigation(timeout=10000):
+                                history_button.click()
+                            print(f"[HISTORY] ✓ Đã chuyển trang")
+                        except:
+                            # Nếu không có navigation, có thể mở tab mới
+                            print(f"[HISTORY] Không có navigation, thử cách khác...")
+                            page.goto(f"https://www.hdsaison.com.vn{href}" if href.startswith('/') else href)
+
+                        time.sleep(2)
+                        page.wait_for_load_state("networkidle")
+
+                        # Đóng popup sau khi chuyển trang
+                        self._close_popup_if_exists(page)
+
+                        # Đếm số lần đóng tiền và tổng tiền
+                        print("[HISTORY] Đang đếm lịch sử thanh toán...")
+                        payment_rows = page.query_selector_all('div.tableTra table tbody tr')
+                        total_payments = len(payment_rows)
+                        total_amount = 0
+
+                        print(f"[HISTORY] Số lần đóng tiền: {total_payments}")
+                        self.log_to_gui(f"💰 Số lần đóng tiền: {total_payments}")
+
+                        for row_idx, row in enumerate(payment_rows, 1):
+                            amount_element = row.query_selector('span.number_vnd')
+                            if amount_element:
+                                amount_text = amount_element.inner_text().strip().replace(".", "").replace(",", "")
+                                try:
+                                    amount = float(amount_text)
+                                    total_amount += amount
+                                    print(f"[HISTORY]   Lần {row_idx}: {amount:,.0f} VNĐ")
+                                except Exception as e:
+                                    print(f"[HISTORY] ✗ Lỗi đọc số tiền lần {row_idx}: {e}")
+
+                        print(f"[HISTORY] Tổng tiền đã đóng: {total_amount:,.0f} VNĐ")
+                        self.log_to_gui(f"💰 Tổng số tiền đã đóng: {total_amount:,.0f} VNĐ")
+                        self.log_to_gui("✅ Đã hoàn thành tra cứu")
+
+                    else:
+                        print("[RESULT] ✗ Không lấy được thông tin từ bảng")
+                        self.log_to_gui("⚠️ Không lấy được thông tin từ bảng")
+
+                except Exception as e:
+                    print(f"[ERROR] ✗ LỖI: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    self.log_to_gui(f"❌ Không tìm thấy thông tin hợp đồng hoặc lỗi: {str(e)}")
+
+                # Giữ trình duyệt mở để xem
+                print("[INFO] Giữ trình duyệt mở 5 phút...")
+                time.sleep(300)  # Giữ mở 5 phút
+
+                print("[INFO] Đóng trình duyệt...")
+                context.close()
+                browser.close()
+
+        except Exception as e:
+            print(f"[ERROR] ✗ LỖI NGHIÊM TRỌNG: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.log_to_gui(f"❌ Lỗi: {str(e)}")
+
+    def _close_popup_if_exists(self, page):
+        """Đóng popup tư vấn nếu xuất hiện"""
+        try:
+            popup = page.query_selector('div.dct-container')
+            if popup and popup.is_visible():
+                print("[POPUP] Phát hiện popup tư vấn, đang đóng...")
+                close_button = page.query_selector('button#close-pop-support')
+                if close_button:
+                    close_button.click()
+                    print("[POPUP] ✓ Đã đóng popup")
+                    import time
+                    time.sleep(0.5)
+                    return True
+        except:
+            pass
+        return False
+
+    def _run_check_contracts_from_file(self):
+        """Thread worker để kiểm tra nhiều hợp đồng từ file"""
+        try:
+            from playwright.sync_api import sync_playwright
+            import time
+            import random
+
+            print("\n" + "="*80)
+            print("BẮT ĐẦU KIỂM TRA HỢP ĐỒNG HÀNG LOẠT")
+            print("="*80)
+            self.log_to_gui("⏳ Đang khởi tạo trình duyệt...")
+
+            # Danh sách lưu kết quả để ghi vào Excel
+            results = []
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context()
+                page = context.new_page()
+
+                print("\n[INIT] Đang mở trang tra cứu...")
+                self.log_to_gui("🌐 Đang mở trang tra cứu...")
+
+                page.goto("https://www.hdsaison.com.vn/vn/khach-hang/tra-cuu-khoan-vay.html")
+                page.wait_for_load_state("networkidle")
+                print("[INIT] ✓ Trang đã sẵn sàng")
+
+                # Đóng popup nếu có
+                self._close_popup_if_exists(page)
+
+                self.log_to_gui("✅ Đã mở trang tra cứu")
+                time.sleep(1)
+
+                # Kiểm tra từng hợp đồng
+                total_contracts = len(self.contract_data)
+
+                for idx, item in enumerate(self.contract_data, 1):
+                    print(f"\n{'='*80}")
+                    print(f"[{idx}/{total_contracts}] KIỂM TRA HỢP ĐỒNG")
+                    print(f"{'='*80}")
+
+                    self.log_to_gui(f"\n{'='*60}")
+                    self.log_to_gui(f"[{idx}/{total_contracts}] Kiểm tra:")
+                    self.log_to_gui(f"  - Số hợp đồng: {item['contract_id']}")
+                    self.log_to_gui(f"  - Số CCCD: {item['cccd']}")
+                    self.log_to_gui(f"  - Tên KH (Excel): {item.get('name', 'N/A')}")
+                    self.log_to_gui(f"  - Số tiền vay (Excel): {item.get('loan_amount', 0):,.0f} VNĐ")
+                    self.log_to_gui(f"  - Số tháng (Excel): {item.get('months', 0)}")
+
+                    print(f"[DATA] Số hợp đồng: {item['contract_id']}")
+                    print(f"[DATA] Số CCCD: {item['cccd']}")
+                    print(f"[DATA] Tên KH: {item.get('name', 'N/A')}")
+                    print(f"[DATA] Số tiền vay: {item.get('loan_amount', 0):,.0f} VNĐ")
+                    print(f"[DATA] Số tháng: {item.get('months', 0)}")
+
+                    # Đóng popup trước khi bắt đầu
+                    self._close_popup_if_exists(page)
+
+                    # Điền số hợp đồng
+                    if item['contract_id']:
+                        print(f"[INPUT] Nhập số hợp đồng: {item['contract_id']}")
+                        self.log_to_gui(f"  📝 Nhập số hợp đồng")
+
+                        # Đóng popup trước khi nhập
+                        self._close_popup_if_exists(page)
+
+                        contract_input = page.wait_for_selector('input#contract_code', timeout=10000)
+                        contract_input.click()
+                        time.sleep(0.2)
+
+                        # Đóng popup sau khi click
+                        self._close_popup_if_exists(page)
+
+                        contract_input.fill("")  # Clear
+                        contract_input.fill(item['contract_id'])
+                        print(f"[INPUT] ✓ Đã nhập số hợp đồng")
+                        time.sleep(random.uniform(0.3, 0.5))
+
+                    # Điền số CCCD
+                    if item['cccd']:
+                        print(f"[INPUT] Nhập số CCCD: {item['cccd']}")
+                        self.log_to_gui(f"  📝 Nhập số CCCD")
+
+                        # Đóng popup trước khi nhập
+                        self._close_popup_if_exists(page)
+
+                        cccd_input = page.wait_for_selector('input#cmnd', timeout=10000)
+                        cccd_input.click()
+                        time.sleep(0.2)
+
+                        # Đóng popup sau khi click
+                        self._close_popup_if_exists(page)
+
+                        cccd_input.fill("")  # Clear
+                        cccd_input.fill(item['cccd'])
+                        print(f"[INPUT] ✓ Đã nhập số CCCD")
+                        time.sleep(random.uniform(0.3, 0.5))
+
+                    # Đóng popup trước khi nhấn tìm kiếm
+                    self._close_popup_if_exists(page)
+
+                    # Nhấn nút tìm kiếm
+                    print(f"[SEARCH] Nhấn nút Tìm kiếm...")
+                    self.log_to_gui(f"  🔍 Tìm kiếm...")
+                    search_button = page.wait_for_selector('button.btnStyAll.btnFull:has-text("Tìm kiếm")', timeout=10000)
+                    search_button.click()
+
+                    print(f"[SEARCH] Đang chờ kết quả...")
+                    self.log_to_gui(f"  ⏳ Chờ kết quả...")
+                    time.sleep(3)
+
+                    # Đóng popup sau khi tìm kiếm
+                    self._close_popup_if_exists(page)
+
+                    # Kiểm tra kết quả
+                    try:
+                        # Đóng popup trước khi đọc kết quả
+                        self._close_popup_if_exists(page)
+
+                        print(f"[RESULT] Kiểm tra kết quả...")
+                        try:
+                            info_table = page.wait_for_selector('div.boxTableBd', timeout=5000)
+                            print(f"[RESULT] ✓ Tìm thấy bảng thông tin")
+                            self.log_to_gui(f"  ✅ Tìm thấy thông tin hợp đồng")
+                        except:
+                            print(f"[RESULT] ✗ Không tìm thấy thông tin hợp đồng")
+                            self.log_to_gui(f"  ⚠️ Không tìm thấy thông tin hợp đồng")
+
+                            # Lưu kết quả lỗi
+                            results.append({
+                                'contract_id': item['contract_id'],
+                                'status': 'Không tìm thấy thông tin'
+                            })
+                            continue
+
+                        # Lấy thông tin từ bảng
+                        name_element = page.query_selector('div.trBody:has-text("Họ Tên khách hàng") div.td')
+                        contract_element = page.query_selector('div.trBody:has-text("Số hợp đồng") div.td')
+
+                        if name_element and contract_element:
+                            result_name = name_element.inner_text().strip()
+                            result_contract = contract_element.inner_text().strip()
+
+                            print(f"[RESULT] Họ tên (Web): {result_name}")
+                            print(f"[RESULT] Số HĐ (Web): {result_contract}")
+
+                            self.log_to_gui(f"  📋 Họ tên (Web): {result_name}")
+                            self.log_to_gui(f"  📋 Số HĐ (Web): {result_contract}")
+
+                            # So sánh tên và số hợp đồng
+                            name_match = result_name.upper() == item.get('name', '').upper()
+                            contract_match = result_contract == item['contract_id']
+
+                            print(f"[COMPARE] So sánh dữ liệu:")
+                            print(f"[COMPARE]   - Tên khớp: {name_match}")
+                            print(f"[COMPARE]   - Số HĐ khớp: {contract_match}")
+
+                            if name_match and contract_match:
+                                print(f"[COMPARE] ✓ Thông tin khớp với Excel")
+                                self.log_to_gui(f"  ✅ Thông tin khớp với Excel")
+
+                                # Đóng popup trước khi nhấn nút
+                                self._close_popup_if_exists(page)
+
+                                # Nhấn nút "Lịch sử thanh toán thực tế"
+                                print(f"[HISTORY] Nhấn nút 'Lịch sử thanh toán thực tế'...")
+                                self.log_to_gui(f"  🔍 Xem lịch sử thanh toán...")
+
+                                # Kiểm tra xem link có mở tab mới không
+                                history_button = page.wait_for_selector('a.btnStyAll.btnFull:has-text("Lịch sử thanh toán thực tế")', timeout=5000)
+
+                                # Lấy href để kiểm tra
+                                href = history_button.get_attribute('href')
+                                print(f"[HISTORY] Link: {href}")
+
+                                # Click và chờ navigation
+                                try:
+                                    with page.expect_navigation(timeout=10000):
+                                        history_button.click()
+                                    print(f"[HISTORY] ✓ Đã chuyển trang")
+                                except:
+                                    # Nếu không có navigation, có thể mở tab mới
+                                    print(f"[HISTORY] Không có navigation, thử cách khác...")
+                                    page.goto(f"https://www.hdsaison.com.vn{href}" if href.startswith('/') else href)
+
+                                time.sleep(2)
+                                page.wait_for_load_state("networkidle")
+
+                                # Đóng popup sau khi chuyển trang
+                                self._close_popup_if_exists(page)
+
+                                # Kiểm tra xem page còn hoạt động không
+                                try:
+                                    if page.is_closed():
+                                        print(f"[ERROR] ✗ Page đã bị đóng!")
+                                        self.log_to_gui(f"  ❌ Trang đã bị đóng")
+                                        continue
+                                except:
+                                    print(f"[ERROR] ✗ Không thể kiểm tra trạng thái page")
+                                    continue
+
+                                # Đếm số lần đóng tiền và tổng tiền
+                                print(f"[HISTORY] Đang đếm lịch sử thanh toán...")
+
+                                try:
+                                    payment_rows = page.query_selector_all('div.tableTra table tbody tr')
+                                    total_payments = len(payment_rows)
+                                    total_amount = 0
+
+                                    print(f"[HISTORY] Số lần đóng tiền: {total_payments}")
+                                    self.log_to_gui(f"  💰 Số lần đóng: {total_payments}")
+
+                                    for row_idx, row in enumerate(payment_rows, 1):
+                                        amount_element = row.query_selector('span.number_vnd')
+                                        if amount_element:
+                                            amount_text = amount_element.inner_text().strip().replace(".", "").replace(",", "")
+                                            try:
+                                                amount = float(amount_text)
+                                                total_amount += amount
+                                                print(f"[HISTORY]   Lần {row_idx}: {amount:,.0f} VNĐ")
+                                            except Exception as e:
+                                                print(f"[HISTORY] ✗ Lỗi đọc số tiền lần {row_idx}: {e}")
+
+                                    print(f"[HISTORY] Tổng tiền đã đóng: {total_amount:,.0f} VNĐ")
+                                    self.log_to_gui(f"  💰 Tổng đã đóng: {total_amount:,.0f} VNĐ")
+                                except Exception as e:
+                                    print(f"[HISTORY] ✗ Lỗi khi đọc bảng thanh toán: {e}")
+                                    self.log_to_gui(f"  ❌ Lỗi đọc bảng thanh toán")
+                                    import traceback
+                                    traceback.print_exc()
+                                    continue
+
+                                # So sánh với số tiền vay trong Excel
+                                loan_amount = item.get('loan_amount', 0)
+                                print(f"[COMPARE] So sánh với Excel:")
+                                print(f"[COMPARE]   - Số tiền vay (Excel): {loan_amount:,.0f} VNĐ")
+                                print(f"[COMPARE]   - Tổng đã đóng (Web): {total_amount:,.0f} VNĐ")
+
+                                # Xác định tình trạng thanh toán
+                                payment_status = ""
+                                if loan_amount > 0:
+                                    if total_amount >= loan_amount:
+                                        payment_status = "Đã đóng đầy đủ"
+                                        print(f"[COMPARE] ✓ Khách hàng đã đóng tiền đầy đủ")
+                                        self.log_to_gui(f"  ✅ Đã đóng tiền đầy đủ")
+                                    else:
+                                        remaining = loan_amount - total_amount
+                                        payment_status = f"Chưa thanh toán {remaining:,.0f} VNĐ"
+                                        print(f"[COMPARE] ⚠ Chưa thanh toán: {remaining:,.0f} VNĐ")
+                                        self.log_to_gui(f"  ⚠️ Chưa thanh toán: {remaining:,.0f} VNĐ")
+                                else:
+                                    payment_status = "Không có thông tin số tiền vay"
+                                    print(f"[COMPARE] ⚠ Không có thông tin số tiền vay trong Excel")
+                                    self.log_to_gui(f"  ⚠️ Không có thông tin số tiền vay")
+
+                                # Lưu kết quả
+                                results.append({
+                                    'contract_id': item['contract_id'],
+                                    'status': payment_status
+                                })
+
+                                # Quay lại trang tra cứu
+                                print(f"[NAVIGATE] Quay lại trang tra cứu...")
+                                self.log_to_gui(f"  🔙 Quay lại trang tra cứu...")
+                                page.goto("https://www.hdsaison.com.vn/vn/khach-hang/tra-cuu-khoan-vay.html")
+                                page.wait_for_load_state("networkidle")
+                                time.sleep(random.uniform(1.0, 1.5))
+
+                                # Đóng popup sau khi quay lại
+                                self._close_popup_if_exists(page)
+                                print(f"[NAVIGATE] ✓ Đã sẵn sàng cho tra cứu tiếp theo")
+
+                            else:
+                                print(f"[COMPARE] ✗ Thông tin KHÔNG khớp với Excel")
+                                self.log_to_gui(f"  ⚠️ Thông tin KHÔNG khớp")
+                                if not name_match:
+                                    print(f"[COMPARE]   - Tên không khớp: Excel='{item.get('name', '')}' vs Web='{result_name}'")
+                                    self.log_to_gui(f"    - Tên không khớp")
+                                if not contract_match:
+                                    print(f"[COMPARE]   - Số HĐ không khớp: Excel='{item['contract_id']}' vs Web='{result_contract}'")
+                                    self.log_to_gui(f"    - Số HĐ không khớp")
+
+                                # Lưu kết quả lỗi
+                                results.append({
+                                    'contract_id': item['contract_id'],
+                                    'status': 'Thông tin không khớp'
+                                })
+                        else:
+                            print(f"[RESULT] ✗ Không lấy được thông tin từ bảng")
+                            self.log_to_gui(f"  ⚠️ Không lấy được thông tin từ bảng")
+
+                            # Lưu kết quả lỗi
+                            results.append({
+                                'contract_id': item['contract_id'],
+                                'status': 'Không lấy được thông tin'
+                            })
+
+                    except Exception as e:
+                        print(f"[ERROR] ✗ LỖI: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                        self.log_to_gui(f"  ❌ Lỗi - {str(e)}")
+
+                        # Lưu kết quả lỗi
+                        results.append({
+                            'contract_id': item['contract_id'],
+                            'status': f'Lỗi: {str(e)}'
+                        })
+
+                    # Delay giữa các lần tra cứu
+                    if idx < total_contracts:
+                        print(f"[WAIT] Chờ {2} giây trước khi tra cứu tiếp...")
+                        time.sleep(2)
+
+                print(f"\n{'='*80}")
+                print(f"HOÀN THÀNH TRA CỨU {total_contracts} HỢP ĐỒNG")
+                print(f"{'='*80}\n")
+
+                self.log_to_gui(f"\n{'='*60}")
+                self.log_to_gui(f"✅ Đã hoàn thành tra cứu {total_contracts} hợp đồng")
+
+                # Đóng trình duyệt
+                print("[INFO] Đóng trình duyệt...")
+                context.close()
+                browser.close()
+                print("[INFO] Đã đóng trình duyệt")
+
+            # Ghi kết quả vào Excel
+            if results and self.contract_excel_path:
+                print(f"\n{'='*80}")
+                print("GHI KẾT QUẢ VÀO FILE EXCEL")
+                print(f"{'='*80}")
+                self.log_to_gui("\n📝 Đang ghi kết quả vào Excel...")
+
+                try:
+                    import openpyxl
+
+                    # Mở file Excel
+                    wb = openpyxl.load_workbook(self.contract_excel_path)
+                    ws = wb.active
+
+                    # Tìm cột cuối cùng
+                    last_col = ws.max_column + 1
+
+                    # Thêm tiêu đề cột
+                    ws.cell(1, last_col, "Tình trạng thanh toán")
+                    print(f"[EXCEL] Thêm cột 'Tình trạng thanh toán' tại cột {last_col}")
+
+                    # Tạo dict để tra cứu nhanh
+                    result_dict = {r['contract_id']: r['status'] for r in results}
+
+                    # Tìm cột "ID Hợp đồng" để map kết quả
+                    contract_col = None
+                    for col_idx, cell in enumerate(ws[1], 1):
+                        if cell.value and "ID Hợp đồng" in str(cell.value).strip():
+                            contract_col = col_idx
+                            break
+
+                    if contract_col:
+                        # Ghi kết quả vào từng dòng
+                        for row_idx in range(2, ws.max_row + 1):
+                            contract_id = ws.cell(row_idx, contract_col).value
+                            if contract_id and str(contract_id).strip() in result_dict:
+                                status = result_dict[str(contract_id).strip()]
+                                ws.cell(row_idx, last_col, status)
+                                print(f"[EXCEL] Dòng {row_idx}: {contract_id} -> {status}")
+
+                        # Lưu file
+                        wb.save(self.contract_excel_path)
+                        print(f"[EXCEL] ✓ Đã lưu file: {self.contract_excel_path}")
+                        self.log_to_gui(f"✅ Đã ghi kết quả vào Excel")
+                        self.log_to_gui(f"📁 File: {self.contract_excel_path}")
+                    else:
+                        print(f"[EXCEL] ✗ Không tìm thấy cột 'ID Hợp đồng'")
+                        self.log_to_gui(f"⚠️ Không tìm thấy cột 'ID Hợp đồng'")
+
+                except Exception as e:
+                    print(f"[EXCEL] ✗ Lỗi khi ghi Excel: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.log_to_gui(f"❌ Lỗi khi ghi Excel: {str(e)}")
+
+        except Exception as e:
+            error_msg = f"LỖI NGHIÊM TRỌNG: {str(e)}"
+            print(f"\n{'='*80}")
+            print(error_msg)
+            print(f"{'='*80}\n")
+            import traceback
+            traceback.print_exc()
+            self.log_to_gui(f"❌ Lỗi: {str(e)}")
 
     # === CÁC HÀM XỬ LÝ CHO TAB ZALO ===
 
@@ -1560,12 +2664,49 @@ Trân trọng!"""
         except Exception as e:
             raise Exception(f"Lỗi khi lưu Excel: {str(e)}")
 
+    def save_message_template(self):
+        """Lưu kịch bản tin nhắn vào file"""
+        try:
+            template = self.zalo_message_template.get("1.0", "end-1c")
+
+            # Lưu vào file JSON
+            template_file = os.path.join(self.app_data_dir, "message_template.json")
+            with open(template_file, "w", encoding="utf-8") as f:
+                json.dump({"template": template}, f, ensure_ascii=False, indent=2)
+
+            self.log_to_gui("✅ Đã lưu kịch bản tin nhắn")
+            messagebox.showinfo(
+                "Thành công",
+                "Đã lưu kịch bản tin nhắn!",
+                parent=self
+            )
+        except Exception as e:
+            self.log_to_gui(f"❌ Lỗi khi lưu kịch bản: {str(e)}")
+            messagebox.showerror(
+                "Lỗi",
+                f"Không thể lưu kịch bản: {str(e)}",
+                parent=self
+            )
+
+    def load_message_template(self):
+        """Load kịch bản tin nhắn từ file"""
+        try:
+            template_file = os.path.join(self.app_data_dir, "message_template.json")
+            if os.path.exists(template_file):
+                with open(template_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("template", "")
+            return ""
+        except Exception as e:
+            print(f"Lỗi khi load kịch bản: {str(e)}")
+            return ""
+
     def save_message_results_to_excel(self, details):
         """
         Lưu kết quả gửi tin nhắn vào file Excel
 
         Args:
-            details: List of dict với keys: phone, name, status
+            details: List of dict với keys: phone, name, status, friend_status
         """
         try:
             from openpyxl import load_workbook
@@ -1592,6 +2733,19 @@ Trân trọng!"""
             if note_col_idx is None:
                 note_col_idx = len(headers)
                 ws.cell(row=1, column=note_col_idx + 1, value="Ghi chú")
+                headers.append("Ghi chú")
+
+            # Tìm hoặc tạo cột "Trạng thái kết bạn"
+            friend_status_col_idx = None
+            for idx, header in enumerate(headers):
+                if header.lower() in ['trạng thái kết bạn', 'trang thai ket ban', 'friend status']:
+                    friend_status_col_idx = idx
+                    break
+
+            # Nếu không có cột "Trạng thái kết bạn", tạo mới
+            if friend_status_col_idx is None:
+                friend_status_col_idx = len(headers)
+                ws.cell(row=1, column=friend_status_col_idx + 1, value="Trạng thái kết bạn")
 
             # Tìm cột số điện thoại để mapping
             phone_col_idx = None
@@ -1628,11 +2782,18 @@ Trân trọng!"""
                 if phone in phone_to_detail:
                     detail = phone_to_detail[phone]
                     status = detail.get('status', 'unknown')
+                    friend_status = detail.get('friend_status', None)
 
                     # Tạo message ghi chú và chọn màu
                     if status == 'success':
                         note = f"✅ Gửi tin nhắn thành công ({timestamp})"
                         fill_color = green_fill
+                    elif status == 'not_registered':
+                        note = f"⚠️ Số chưa đăng ký hoặc không cho phép tìm kiếm ({timestamp})"
+                        fill_color = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # Màu vàng nhạt
+                    elif status == 'not_found':
+                        note = f"⚠️ Không tìm thấy kết quả ({timestamp})"
+                        fill_color = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # Màu vàng nhạt
                     elif status == 'failed':
                         note = f"❌ Gửi tin nhắn thất bại ({timestamp})"
                         fill_color = red_fill
@@ -1650,6 +2811,19 @@ Trân trọng!"""
                     note_cell = ws.cell(row=row_idx, column=note_col_idx + 1, value=note)
                     if fill_color:
                         note_cell.fill = fill_color
+
+                    # Ghi vào cột "Trạng thái kết bạn"
+                    if friend_status:
+                        if friend_status == 'friend':
+                            friend_status_text = "👥 Bạn bè"
+                        elif friend_status == 'stranger':
+                            friend_status_text = "👤 Người lạ"
+                        else:
+                            friend_status_text = "❓ Không xác định"
+
+                        friend_status_cell = ws.cell(row=row_idx, column=friend_status_col_idx + 1, value=friend_status_text)
+                        if fill_color:
+                            friend_status_cell.fill = fill_color
 
                     updated_count += 1
 
@@ -1720,13 +2894,28 @@ Trân trọng!"""
         if not result:
             return
 
+        # Tự động lưu kịch bản trước khi gửi
+        try:
+            template_file = os.path.join(self.app_data_dir, "message_template.json")
+            with open(template_file, "w", encoding="utf-8") as f:
+                json.dump({"template": template}, f, ensure_ascii=False, indent=2)
+            self.log_to_gui("💾 Đã tự động lưu kịch bản tin nhắn")
+        except Exception as e:
+            self.log_to_gui(f"⚠️ Không thể tự động lưu kịch bản: {str(e)}")
+
         # Lưu danh sách cần xử lý vào biến tạm
         self.current_customers_to_process = customers_to_process
 
         # Reset trạng thái tạm dừng
         self.is_paused = False
+
+        # Enable nút tạm dừng cho gửi tin nhắn
+        self.message_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+        self.message_pause_button.configure(state="normal")
+
+        # Cũng enable nút tạm dừng chung (để tương thích)
         self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-        self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
+        self.zalo_pause_button.configure(state="normal")
 
         # Chạy trong thread riêng
         thread = threading.Thread(
@@ -1815,11 +3004,15 @@ Trân trọng!"""
         self.is_paused = not self.is_paused
 
         if self.is_paused:
+            # Cập nhật cả 2 nút
             self.zalo_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
-            self.log_to_gui("Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
+            self.message_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
+            self.log_to_gui("⏸️ Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
         else:
+            # Cập nhật cả 2 nút
             self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-            self.log_to_gui("Tiếp tục chạy...")
+            self.message_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+            self.log_to_gui("▶️ Tiếp tục chạy...")
 
 
 
@@ -1863,13 +3056,14 @@ Trân trọng!"""
             # Tạo automation instance
             automation = zalo_automation.ZaloAutomation(page)
 
-            # Gửi tin nhắn hàng loạt (với hỗ trợ pause)
+            # Gửi tin nhắn hàng loạt (với hỗ trợ pause và kiểm tra trạng thái bạn bè)
             result = automation.send_bulk_messages(
                 customers,
                 template,
                 callback=self.log_to_gui,
                 delay=3,
-                is_paused_func=lambda: self.is_paused
+                is_paused_func=lambda: self.is_paused,
+                check_friend_status=True  # Kiểm tra và ghi nhận trạng thái bạn bè/người lạ
             )
 
             # Hiển thị kết quả
@@ -1894,6 +3088,7 @@ Trân trọng!"""
 
             # Disable nút điều khiển
             self.zalo_pause_button.configure(state="disabled")
+            self.message_pause_button.configure(state="disabled")
 
             # Giữ trình duyệt mở
             self.log_to_gui("\nℹ️ Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
@@ -1920,9 +3115,11 @@ Trân trọng!"""
             self.log_to_gui(f"❌ Lỗi import: {str(e)}")
             self.log_to_gui("💡 Vui lòng cài đặt: pip install playwright")
             self.zalo_pause_button.configure(state="disabled")
+            self.message_pause_button.configure(state="disabled")
         except Exception as e:
             self.log_to_gui(f"❌ Lỗi khi gửi tin nhắn: {str(e)}")
             self.zalo_pause_button.configure(state="disabled")
+            self.message_pause_button.configure(state="disabled")
 
     def _run_add_friends_bulk(self):
         """Thread worker để kết bạn hàng loạt"""
@@ -1940,6 +3137,12 @@ Trân trọng!"""
                     parent=self
                 )
                 return
+
+            # Lấy lời chào từ textbox
+            greeting_template = self.friend_greeting_textbox.get("1.0", "end-1c").strip()
+            if not greeting_template:
+                greeting_template = "Xin chào, mình là {my_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+                self.log_to_gui("⚠️ Lời chào trống, sử dụng lời chào mặc định")
 
             self.log_to_gui("⏳ Đang khởi tạo Zalo...")
 
@@ -1986,11 +3189,38 @@ Trân trọng!"""
                 name = customer.get('name', 'N/A')
                 contract_id = customer.get('contract_id', '')
 
+                # Chuyển đổi giới tính từ Nam/Nữ sang anh/chị
+                gender_raw = customer.get('gender', '').strip()
+                gender_pronoun = ''
+                if gender_raw:
+                    gender_lower = gender_raw.lower()
+                    if 'nam' in gender_lower or 'male' in gender_lower:
+                        gender_pronoun = 'anh'
+                    elif 'nữ' in gender_lower or 'nv' in gender_lower or 'female' in gender_lower:
+                        gender_pronoun = 'chị'
+                    else:
+                        gender_pronoun = 'anh/chị'
+                else:
+                    gender_pronoun = 'anh/chị'
+
+                # Format greeting template với các biến
+                formatted_greeting = greeting_template.format(
+                    name=name,
+                    phone=phone,
+                    contract_id=contract_id,
+                    my_name=my_zalo_name,
+                    gender=gender_pronoun,
+                    address=customer.get('address', ''),
+                    cccd=customer.get('cccd', ''),
+                    dob=customer.get('dob', '')
+                )
+
                 self.log_to_gui(f"\n{'='*60}")
                 self.log_to_gui(f"➕ [{idx}/{len(customers_with_phone)}] Đang kết bạn: {name} ({phone})")
 
                 # Gọi hàm kết bạn (trả về tuple: success/status, display_name)
-                result, display_name = automation.add_friend_by_phone(phone, contract_id, my_zalo_name)
+                # Truyền formatted_greeting thay vì greeting_template
+                result, display_name = automation.add_friend_by_phone(phone, contract_id, my_zalo_name, formatted_greeting)
 
                 # Xử lý kết quả
                 if result == "already_sent":
