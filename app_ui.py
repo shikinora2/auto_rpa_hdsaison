@@ -9,6 +9,7 @@ import os
 import json
 import base64
 import zalo_logic
+import google_sheet_logic  # Logic Google Sheets
 
 customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
@@ -17,7 +18,7 @@ class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Trình Tải & Trích Xuất Hợp Đồng (v6 - Tabs)")
+        self.title("Tool Automation")
         self.geometry("850x700")
 
         # === CẤU HÌNH GRID CHO CỬA SỔ CHÍNH ===
@@ -43,25 +44,29 @@ class App(customtkinter.CTk):
         # === TẠO TABVIEW ===
         self.tabview = customtkinter.CTkTabview(self, width=600, height=650)
         self.tabview.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
-        
-        # Tạo 4 tabs
+
+        # Tạo 5 tabs
         self.tabview.add("Trang Chủ")
         self.tabview.add("Tác Vụ")
         self.tabview.add("Auto Zalo")
         self.tabview.add("Kiểm Tra Hợp Đồng")
+        self.tabview.add("Gemini & Sheet")
 
         # Cấu hình grid cho từng tab
         self.tabview.tab("Trang Chủ").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Trang Chủ").grid_rowconfigure(2, weight=1)
 
         self.tabview.tab("Tác Vụ").grid_columnconfigure(0, weight=1)
-        self.tabview.tab("Tác Vụ").grid_rowconfigure(4, weight=1)
+        self.tabview.tab("Tác Vụ").grid_rowconfigure(3, weight=1)
 
         self.tabview.tab("Auto Zalo").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Auto Zalo").grid_rowconfigure(1, weight=1)
 
         self.tabview.tab("Kiểm Tra Hợp Đồng").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Kiểm Tra Hợp Đồng").grid_rowconfigure(0, weight=1)
+
+        self.tabview.tab("Gemini & Sheet").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Gemini & Sheet").grid_rowconfigure(1, weight=1)
 
         # Biến lưu dữ liệu khách hàng cho Zalo
         self.zalo_customer_data = []  # List of dict: [{name, phone, address, ...}, ...]
@@ -74,6 +79,9 @@ class App(customtkinter.CTk):
         # Biến quản lý trạng thái tạm dừng
         self.is_paused = False
 
+        # Khởi tạo Google Sheet Manager
+        self.sheet_manager = google_sheet_logic.GoogleSheetManager()
+
         # === TAB 1: TRANG CHỦ ===
         self.create_home_tab()
 
@@ -85,6 +93,9 @@ class App(customtkinter.CTk):
 
         # === TAB 4: KIỂM TRA HỢP ĐỒNG ===
         self.create_contract_check_tab()
+
+        # === TAB 5: GEMINI & SHEET ===
+        self.create_gemini_sheet_tab()
 
         self.load_config()
         self.load_zalo_session_info()  # Load thông tin session Zalo
@@ -439,9 +450,417 @@ class App(customtkinter.CTk):
         )
         self.extract_button.pack(fill="x", padx=10, pady=(0, 10))
 
-        # === KẾT NỐI API GEMINI ===
-        self.gemini_frame = customtkinter.CTkFrame(tasks_tab)
-        self.gemini_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 10))
+    def create_zalo_tab(self):
+        """Tạo nội dung cho tab Auto Zalo với ScrollableFrame"""
+        zalo_tab = self.tabview.tab("Auto Zalo")
+
+        # === TIÊU ĐỀ ===
+        zalo_title = customtkinter.CTkLabel(
+            zalo_tab,
+            text="TỰ ĐỘNG HÓA ZALO",
+            font=customtkinter.CTkFont(weight="bold", size=16)
+        )
+        zalo_title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
+
+        # === SCROLLABLE FRAME ===
+        scrollable_frame = customtkinter.CTkScrollableFrame(zalo_tab, fg_color="transparent")
+        scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+
+        # === 1. QUẢN LÝ TÀI KHOẢN ZALO ===
+        account_frame = customtkinter.CTkFrame(scrollable_frame)
+        account_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        account_frame.grid_columnconfigure(0, weight=0)  # Cột nút (trái)
+        account_frame.grid_columnconfigure(1, weight=1)  # Cột nhập liệu (phải)
+
+        account_title = customtkinter.CTkLabel(
+            account_frame,
+            text="Quản Lý Tài Khoản Zalo",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        account_title.grid(row=0, column=0, columnspan=2, pady=(10, 8), padx=10, sticky="w")
+
+        # === CỘT TRÁI: CÁC NÚT ===
+        buttons_left_frame = customtkinter.CTkFrame(account_frame, fg_color="transparent")
+        buttons_left_frame.grid(row=1, column=0, padx=(15, 10), pady=5, sticky="n")
+
+        # Nút kiểm tra và cập nhật
+        check_button = customtkinter.CTkButton(
+            buttons_left_frame, text="Kiểm tra & Cập nhật",
+            command=self.check_zalo_status, height=32, width=150,
+            font=customtkinter.CTkFont(size=12)
+        )
+        check_button.pack(pady=3)
+
+        # Nút mở Zalo
+        open_zalo_btn = customtkinter.CTkButton(
+            buttons_left_frame, text="Mở Zalo",
+            command=self.open_zalo_window, height=32, width=150,
+            fg_color="#0068FF", hover_color="#0052CC",
+            font=customtkinter.CTkFont(size=12)
+        )
+        open_zalo_btn.pack(pady=3)
+
+        # Frame chứa nút thêm/xóa tài khoản
+        account_action_frame = customtkinter.CTkFrame(buttons_left_frame, fg_color="transparent")
+        account_action_frame.pack(pady=3)
+
+        # Nút thêm tài khoản
+        add_account_btn = customtkinter.CTkButton(
+            account_action_frame, text="+", width=70, height=28,
+            command=self.add_zalo_account, font=customtkinter.CTkFont(size=16)
+        )
+        add_account_btn.pack(side="left", padx=2)
+
+        # Nút xóa tài khoản
+        delete_account_btn = customtkinter.CTkButton(
+            account_action_frame, text="X", width=70, height=28,
+            command=self.delete_zalo_account, fg_color="#DC3545", hover_color="#C82333",
+            font=customtkinter.CTkFont(size=16)
+        )
+        delete_account_btn.pack(side="left", padx=2)
+
+        # === CỘT PHẢI: CÁC Ô NHẬP LIỆU VÀ THÔNG TIN ===
+        info_right_frame = customtkinter.CTkFrame(account_frame, fg_color="transparent")
+        info_right_frame.grid(row=1, column=1, padx=(10, 15), pady=5, sticky="ew")
+        info_right_frame.grid_columnconfigure(1, weight=1)
+
+        # Tài khoản
+        account_label = customtkinter.CTkLabel(
+            info_right_frame, text="Tài khoản:", font=customtkinter.CTkFont(size=12)
+        )
+        account_label.grid(row=0, column=0, padx=(0, 10), pady=5, sticky="w")
+
+        self.account_combobox = customtkinter.CTkComboBox(
+            info_right_frame, values=["Chưa có tài khoản"],
+            command=self.on_account_selected, font=customtkinter.CTkFont(size=12)
+        )
+        self.account_combobox.grid(row=0, column=1, pady=5, sticky="ew")
+        self.account_combobox.set("Chưa có tài khoản")
+
+        # Họ tên Zalo
+        zalo_name_title = customtkinter.CTkLabel(
+            info_right_frame, text="Họ tên:", font=customtkinter.CTkFont(size=12)
+        )
+        zalo_name_title.grid(row=1, column=0, padx=(0, 10), pady=5, sticky="w")
+
+        self.zalo_name_label = customtkinter.CTkLabel(
+            info_right_frame, text="Chưa cập nhật", font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.zalo_name_label.grid(row=1, column=1, pady=5, sticky="w")
+
+        # Phiên đăng nhập
+        session_title = customtkinter.CTkLabel(
+            info_right_frame, text="Phiên đăng nhập:", font=customtkinter.CTkFont(size=12)
+        )
+        session_title.grid(row=2, column=0, padx=(0, 10), pady=5, sticky="w")
+
+        self.zalo_session_label = customtkinter.CTkLabel(
+            info_right_frame, text="Chưa đăng nhập", font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.zalo_session_label.grid(row=2, column=1, pady=5, sticky="w")
+
+        # Trạng thái
+        status_title = customtkinter.CTkLabel(
+            info_right_frame, text="Trạng thái:", font=customtkinter.CTkFont(size=12)
+        )
+        status_title.grid(row=3, column=0, padx=(0, 10), pady=5, sticky="w")
+
+        self.zalo_status_label = customtkinter.CTkLabel(
+            info_right_frame, text="❌ Inactive", font=customtkinter.CTkFont(size=12),
+            text_color="red"
+        )
+        self.zalo_status_label.grid(row=3, column=1, pady=5, sticky="w")
+
+        # === 2. NHẬP DỮ LIỆU KHÁCH HÀNG ===
+        data_frame = customtkinter.CTkFrame(scrollable_frame)
+        data_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        data_frame.grid_columnconfigure(0, weight=0)  # Cột nút (trái)
+        data_frame.grid_columnconfigure(1, weight=1)  # Cột thông tin (phải)
+
+        data_title = customtkinter.CTkLabel(
+            data_frame,
+            text="📁 Nhập Dữ Liệu Khách Hàng",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        data_title.grid(row=0, column=0, columnspan=2, pady=(10, 8), padx=10, sticky="w")
+
+        # === CỘT TRÁI: CÁC NÚT ===
+        data_buttons_frame = customtkinter.CTkFrame(data_frame, fg_color="transparent")
+        data_buttons_frame.grid(row=1, column=0, padx=(15, 10), pady=(0, 15), sticky="n")
+
+        # Nút chọn file Excel
+        self.select_excel_button = customtkinter.CTkButton(
+            data_buttons_frame,
+            text="Chọn File Excel",
+            command=self.select_zalo_excel,
+            height=32, width=150,
+            font=customtkinter.CTkFont(size=13)
+        )
+        self.select_excel_button.pack(pady=3)
+
+        # Nút nhập từ Sheet
+        self.import_from_sheet_button = customtkinter.CTkButton(
+            data_buttons_frame,
+            text="Nhập từ Sheet",
+            command=self.import_zalo_from_sheet,
+            height=32, width=150,
+            fg_color="#0F9D58",
+            hover_color="#0B8043",
+            font=customtkinter.CTkFont(size=13)
+        )
+        self.import_from_sheet_button.pack(pady=3)
+
+        # === CỘT PHẢI: THÔNG TIN FILE ===
+        info_frame = customtkinter.CTkFrame(data_frame, fg_color="transparent")
+        info_frame.grid(row=1, column=1, padx=(10, 15), pady=(0, 15), sticky="ew")
+
+        # Hiển thị file đã chọn
+        self.zalo_file_label = customtkinter.CTkLabel(
+            info_frame,
+            text="Chưa chọn nguồn dữ liệu",
+            font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.zalo_file_label.pack(anchor="w", pady=(0, 5))
+
+        # Hiển thị số lượng khách hàng
+        self.zalo_customer_count_label = customtkinter.CTkLabel(
+            info_frame,
+            text="Số khách hàng: 0",
+            font=customtkinter.CTkFont(size=12, weight="bold"),
+            text_color="#0068FF"
+        )
+        self.zalo_customer_count_label.pack(anchor="w")
+
+        # === 3. KẾT BẠN HÀNG LOẠT ===
+        friend_frame = customtkinter.CTkFrame(scrollable_frame)
+        friend_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        friend_frame.grid_columnconfigure(0, weight=0)  # Cột nút (trái)
+        friend_frame.grid_columnconfigure(1, weight=1)  # Cột nhập liệu (phải)
+
+        friend_title = customtkinter.CTkLabel(
+            friend_frame,
+            text="👥 Kết Bạn Hàng Loạt",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        friend_title.grid(row=0, column=0, columnspan=2, pady=(10, 8), padx=10, sticky="w")
+
+        # === CỘT TRÁI: CÁC NÚT ===
+        friend_buttons_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
+        friend_buttons_frame.grid(row=1, column=0, padx=(15, 10), pady=(0, 15), sticky="n")
+
+        # Nút kết bạn
+        self.add_friend_button = customtkinter.CTkButton(
+            friend_buttons_frame,
+            text="Kết Bạn Hàng Loạt",
+            command=self.add_friends_bulk,
+            fg_color="#FFC107",
+            hover_color="#E0A800",
+            text_color="black",
+            height=36, width=150,
+            font=customtkinter.CTkFont(size=13, weight="bold")
+        )
+        self.add_friend_button.pack(pady=3)
+
+        # Nút tạm dừng/tiếp tục (Zalo)
+        self.zalo_pause_button = customtkinter.CTkButton(
+            friend_buttons_frame,
+            text="Tạm dừng",
+            command=self.toggle_pause,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            height=36, width=150,
+            font=customtkinter.CTkFont(size=13, weight="bold"),
+            state="disabled"  # Mặc định disabled
+        )
+        self.zalo_pause_button.pack(pady=3)
+
+        # === CỘT PHẢI: Ô NHẬP LIỆU ===
+        friend_input_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
+        friend_input_frame.grid(row=1, column=1, padx=(10, 15), pady=(0, 15), sticky="nsew")
+
+        # Hướng dẫn
+        friend_help = customtkinter.CTkLabel(
+            friend_input_frame,
+            text="Gửi lời mời kết bạn đến tất cả số điện thoại trong danh sách",
+            font=customtkinter.CTkFont(size=11),
+            text_color="gray"
+        )
+        friend_help.pack(anchor="w", pady=(0, 5))
+
+        # Hướng dẫn biến có sẵn cho lời chào
+        greeting_help = customtkinter.CTkLabel(
+            friend_input_frame,
+            text="Biến có sẵn: {my_name}, {contract_id}, {name}, {phone}, {gender} (Nam→anh, Nữ→chị), {address}, {cccd}, {dob}",
+            font=customtkinter.CTkFont(size=11),
+            text_color="gray"
+        )
+        greeting_help.pack(anchor="w", pady=(0, 3))
+
+        # Label cho ô nhập lời chào
+        greeting_label = customtkinter.CTkLabel(
+            friend_input_frame,
+            text="Lời chào khi kết bạn:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        greeting_label.pack(anchor="w", pady=(0, 3))
+
+        # TextBox nhập lời chào
+        self.friend_greeting_textbox = customtkinter.CTkTextbox(
+            friend_input_frame,
+            height=80,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.friend_greeting_textbox.pack(fill="both", expand=True, pady=(0, 10))
+
+        # Lời chào mặc định
+        default_greeting = "Xin chào, mình là {my_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+        self.friend_greeting_textbox.insert("1.0", default_greeting)
+
+        # Checkbox bỏ qua khách hàng đã xử lý
+        self.skip_processed_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
+        self.skip_processed_checkbox = customtkinter.CTkCheckBox(
+            friend_input_frame,
+            text="Bỏ qua khách hàng đã kết bạn thành công",
+            variable=self.skip_processed_var,
+            font=customtkinter.CTkFont(size=12),
+            text_color="#28A745"
+        )
+        self.skip_processed_checkbox.pack(anchor="w")
+
+        # === 4. NHẮN TIN HÀNG LOẠT ===
+        message_frame = customtkinter.CTkFrame(scrollable_frame)
+        message_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        message_frame.grid_columnconfigure(0, weight=0)  # Cột nút (trái)
+        message_frame.grid_columnconfigure(1, weight=1)  # Cột nhập liệu (phải)
+
+        message_title = customtkinter.CTkLabel(
+            message_frame,
+            text="💬 Nhắn Tin Hàng Loạt",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        message_title.grid(row=0, column=0, columnspan=2, pady=(10, 8), padx=10, sticky="w")
+
+        # === CỘT TRÁI: CÁC NÚT ===
+        message_buttons_left = customtkinter.CTkFrame(message_frame, fg_color="transparent")
+        message_buttons_left.grid(row=1, column=0, padx=(15, 10), pady=(0, 15), sticky="n")
+
+        # Nút gửi tin nhắn
+        self.send_message_button = customtkinter.CTkButton(
+            message_buttons_left,
+            text="Gửi Tin Nhắn Hàng Loạt",
+            command=self.send_bulk_messages,
+            fg_color="#28A745",
+            hover_color="#218838",
+            height=36, width=150,
+            font=customtkinter.CTkFont(size=13, weight="bold")
+        )
+        self.send_message_button.pack(pady=3)
+
+        # Nút tạm dừng/tiếp tục cho gửi tin nhắn
+        self.message_pause_button = customtkinter.CTkButton(
+            message_buttons_left,
+            text="Tạm dừng",
+            command=self.toggle_pause,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            height=36, width=150,
+            font=customtkinter.CTkFont(size=13, weight="bold"),
+            state="disabled"  # Mặc định disabled
+        )
+        self.message_pause_button.pack(pady=3)
+
+        # Nút lưu kịch bản
+        save_template_button = customtkinter.CTkButton(
+            message_buttons_left,
+            text="💾 Lưu kịch bản",
+            command=self.save_message_template,
+            fg_color="#17A2B8",
+            hover_color="#138496",
+            height=32, width=150,
+            font=customtkinter.CTkFont(size=12)
+        )
+        save_template_button.pack(pady=3)
+
+        # === CỘT PHẢI: Ô NHẬP LIỆU ===
+        message_input_frame = customtkinter.CTkFrame(message_frame, fg_color="transparent")
+        message_input_frame.grid(row=1, column=1, padx=(10, 15), pady=(0, 15), sticky="nsew")
+
+        # Hướng dẫn sử dụng biến
+        help_label = customtkinter.CTkLabel(
+            message_input_frame,
+            text="Biến có sẵn: {name}, {phone}, {address}, {cccd}, {dob}, {contract_id}, {gender} (Nam→anh, Nữ→chị)",
+            font=customtkinter.CTkFont(size=11),
+            text_color="gray"
+        )
+        help_label.pack(anchor="w", pady=(0, 5))
+
+        # TextBox nhập kịch bản
+        message_label = customtkinter.CTkLabel(
+            message_input_frame,
+            text="Kịch bản tin nhắn:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        message_label.pack(anchor="w", pady=(0, 3))
+
+        self.zalo_message_template = customtkinter.CTkTextbox(
+            message_input_frame,
+            height=120,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.zalo_message_template.pack(fill="both", expand=True, pady=(0, 10))
+
+        # Load kịch bản đã lưu hoặc dùng mặc định
+        saved_template = self.load_message_template()
+        if saved_template:
+            self.zalo_message_template.insert("1.0", saved_template)
+        else:
+            # Template mặc định
+            default_template = """Xin chào anh/chị {name},
+
+Chúng tôi xin thông báo về hợp đồng {contract_id}:
+- Số điện thoại: {phone}
+- Địa chỉ: {address}
+- Số CCCD: {cccd}
+
+Vui lòng liên hệ nếu có thắc mắc.
+Trân trọng!"""
+            self.zalo_message_template.insert("1.0", default_template)
+
+        # Checkbox bỏ qua khách hàng đã gửi tin nhắn
+        self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
+        self.skip_sent_messages_checkbox = customtkinter.CTkCheckBox(
+            message_input_frame,
+            text="Bỏ qua khách hàng đã gửi tin nhắn thành công",
+            variable=self.skip_sent_messages_var,
+            font=customtkinter.CTkFont(size=12),
+            text_color="#28A745"
+        )
+        self.skip_sent_messages_checkbox.pack(anchor="w")
+
+    def create_gemini_sheet_tab(self):
+        """Tạo nội dung cho tab Gemini & Sheet"""
+        gemini_sheet_tab = self.tabview.tab("Gemini & Sheet")
+
+        # === TIÊU ĐỀ ===
+        title = customtkinter.CTkLabel(
+            gemini_sheet_tab,
+            text="🤖 GEMINI & GOOGLE SHEET",
+            font=customtkinter.CTkFont(weight="bold", size=16)
+        )
+        title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
+
+        # === SCROLLABLE FRAME ===
+        scrollable_frame = customtkinter.CTkScrollableFrame(gemini_sheet_tab, fg_color="transparent")
+        scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+
+        # === 1. KẾT NỐI API GEMINI ===
+        self.gemini_frame = customtkinter.CTkFrame(scrollable_frame)
+        self.gemini_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
         self.gemini_label = customtkinter.CTkLabel(
             self.gemini_frame,
@@ -500,360 +919,65 @@ class App(customtkinter.CTk):
         )
         self.connect_gemini_button.pack(fill="x", padx=10, pady=(0, 10))
 
-    def create_zalo_tab(self):
-        """Tạo nội dung cho tab Auto Zalo với ScrollableFrame"""
-        zalo_tab = self.tabview.tab("Auto Zalo")
+        # === 2. GOOGLE SHEET ===
+        self.sheet_frame = customtkinter.CTkFrame(scrollable_frame)
+        self.sheet_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
-        # === TIÊU ĐỀ ===
-        zalo_title = customtkinter.CTkLabel(
-            zalo_tab,
-            text="TỰ ĐỘNG HÓA ZALO",
-            font=customtkinter.CTkFont(weight="bold", size=16)
-        )
-        zalo_title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
-
-        # === SCROLLABLE FRAME ===
-        scrollable_frame = customtkinter.CTkScrollableFrame(zalo_tab, fg_color="transparent")
-        scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        scrollable_frame.grid_columnconfigure(0, weight=1)
-
-        # === 1. QUẢN LÝ TÀI KHOẢN ZALO ===
-        account_frame = customtkinter.CTkFrame(scrollable_frame)
-        account_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        account_frame.grid_columnconfigure(1, weight=1)
-        account_frame.grid_columnconfigure(5, weight=1)
-
-        account_title = customtkinter.CTkLabel(
-            account_frame,
-            text="Quản Lý Tài Khoản Zalo",
+        self.sheet_label = customtkinter.CTkLabel(
+            self.sheet_frame,
+            text="📊 GOOGLE SHEET",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
-        account_title.grid(row=0, column=0, columnspan=6, pady=(10, 8), padx=10, sticky="w")
-
-        # Tài khoản
-        account_label = customtkinter.CTkLabel(
-            account_frame, text="Tài khoản:", font=customtkinter.CTkFont(size=12)
-        )
-        account_label.grid(row=1, column=0, padx=(15, 5), pady=5, sticky="w")
-
-        self.account_combobox = customtkinter.CTkComboBox(
-            account_frame, values=["Chưa có tài khoản"], width=180,
-            command=self.on_account_selected, font=customtkinter.CTkFont(size=12)
-        )
-        self.account_combobox.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        self.account_combobox.set("Chưa có tài khoản")
-
-        # Nút thêm tài khoản
-        add_account_btn = customtkinter.CTkButton(
-            account_frame, text="+", width=30, height=28,
-            command=self.add_zalo_account, font=customtkinter.CTkFont(size=16)
-        )
-        add_account_btn.grid(row=1, column=2, padx=5, pady=5)
-
-        # Nút xóa tài khoản
-        delete_account_btn = customtkinter.CTkButton(
-            account_frame, text="X", width=30, height=28,
-            command=self.delete_zalo_account, fg_color="#DC3545", hover_color="#C82333",
-            font=customtkinter.CTkFont(size=16)
-        )
-        delete_account_btn.grid(row=1, column=3, padx=5, pady=5)
-
-        # Họ tên Zalo
-        zalo_name_title = customtkinter.CTkLabel(
-            account_frame, text="Họ tên:", font=customtkinter.CTkFont(size=12)
-        )
-        zalo_name_title.grid(row=1, column=4, padx=(15, 5), pady=5, sticky="w")
-
-        self.zalo_name_label = customtkinter.CTkLabel(
-            account_frame, text="Chưa cập nhật", font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.zalo_name_label.grid(row=1, column=5, padx=5, pady=5, sticky="w")
-
-        # Phiên đăng nhập
-        session_title = customtkinter.CTkLabel(
-            account_frame, text="Phiên đăng nhập:", font=customtkinter.CTkFont(size=12)
-        )
-        session_title.grid(row=2, column=0, padx=(15, 5), pady=5, sticky="w")
-
-        self.zalo_session_label = customtkinter.CTkLabel(
-            account_frame, text="Chưa đăng nhập", font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.zalo_session_label.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky="w")
-
-        # Trạng thái
-        status_title = customtkinter.CTkLabel(
-            account_frame, text="Trạng thái:", font=customtkinter.CTkFont(size=12)
-        )
-        status_title.grid(row=2, column=4, padx=(15, 5), pady=5, sticky="w")
-
-        self.zalo_status_label = customtkinter.CTkLabel(
-            account_frame, text="❌ Inactive", font=customtkinter.CTkFont(size=12),
-            text_color="red"
-        )
-        self.zalo_status_label.grid(row=2, column=5, padx=5, pady=5, sticky="w")
-
-        # Nút kiểm tra và cập nhật
-        check_button = customtkinter.CTkButton(
-            account_frame, text="Kiểm tra & Cập nhật",
-            command=self.check_zalo_status, height=32,
-            font=customtkinter.CTkFont(size=12)
-        )
-        check_button.grid(row=3, column=0, columnspan=3, padx=15, pady=(5, 10), sticky="ew")
-
-        # Nút mở Zalo
-        open_zalo_btn = customtkinter.CTkButton(
-            account_frame, text="Mở Zalo",
-            command=self.open_zalo_window, height=32,
-            fg_color="#0068FF", hover_color="#0052CC",
-            font=customtkinter.CTkFont(size=12)
-        )
-        open_zalo_btn.grid(row=3, column=4, columnspan=2, padx=15, pady=(5, 10), sticky="ew")
-
-        # === 2. NHẬP DỮ LIỆU KHÁCH HÀNG ===
-
-        # === 2. NHẬP DỮ LIỆU KHÁCH HÀNG ===
-        data_frame = customtkinter.CTkFrame(scrollable_frame)
-        data_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
-        data_frame.grid_columnconfigure(0, weight=1)
-
-        data_title = customtkinter.CTkLabel(
-            data_frame,
-            text="� Nhập Dữ Liệu Khách Hàng",
-            font=customtkinter.CTkFont(weight="bold", size=14)
-        )
-        data_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
-
-        # Hiển thị file đã chọn
-        self.zalo_file_label = customtkinter.CTkLabel(
-            data_frame,
-            text="Chưa chọn file",
-            font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.zalo_file_label.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
-
-        # Nút chọn file Excel
-        self.select_excel_button = customtkinter.CTkButton(
-            data_frame,
-            text="Chọn File Excel",
-            command=self.select_zalo_excel,
-            height=32,
-            font=customtkinter.CTkFont(size=13)
-        )
-        self.select_excel_button.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 10))
-
-        # Hiển thị số lượng khách hàng
-        self.zalo_customer_count_label = customtkinter.CTkLabel(
-            data_frame,
-            text="Số khách hàng: 0",
-            font=customtkinter.CTkFont(size=12, weight="bold"),
-            text_color="#0068FF"
-        )
-        self.zalo_customer_count_label.grid(row=3, column=0, padx=15, pady=(0, 15), sticky="w")
-
-        # === 2. KẾT BẠN HÀNG LOẠT ===
-        friend_frame = customtkinter.CTkFrame(scrollable_frame)
-        friend_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
-        friend_frame.grid_columnconfigure(0, weight=1)
-
-        friend_title = customtkinter.CTkLabel(
-            friend_frame,
-            text="� Kết Bạn Hàng Loạt",
-            font=customtkinter.CTkFont(weight="bold", size=14)
-        )
-        friend_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
+        self.sheet_label.pack(pady=(10, 8))
 
         # Hướng dẫn
-        friend_help = customtkinter.CTkLabel(
-            friend_frame,
-            text="Gửi lời mời kết bạn đến tất cả số điện thoại trong danh sách",
+        sheet_help = customtkinter.CTkLabel(
+            self.sheet_frame,
+            text="Xuất dữ liệu lên Google Sheets",
             font=customtkinter.CTkFont(size=11),
             text_color="gray"
         )
-        friend_help.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
+        sheet_help.pack(pady=(0, 8), padx=12, anchor="w")
 
-        # Hướng dẫn biến có sẵn cho lời chào
-        greeting_help = customtkinter.CTkLabel(
-            friend_frame,
-            text="Biến có sẵn: {my_name}, {contract_id}, {name}, {phone}, {gender} (Nam→anh, Nữ→chị), {address}, {cccd}, {dob}",
-            font=customtkinter.CTkFont(size=11),
-            text_color="gray"
+        # Frame chứa Sheet ID
+        sheet_id_container = customtkinter.CTkFrame(self.sheet_frame, fg_color="transparent")
+        sheet_id_container.pack(pady=(0, 8), padx=12, fill="x")
+
+        self.sheet_id_label = customtkinter.CTkLabel(
+            sheet_id_container,
+            text="Sheet ID:",
+            font=customtkinter.CTkFont(size=13)
         )
-        greeting_help.grid(row=2, column=0, padx=15, pady=(0, 3), sticky="w")
+        self.sheet_id_label.pack(side="left", padx=(0, 5))
 
-        # Label cho ô nhập lời chào
-        greeting_label = customtkinter.CTkLabel(
-            friend_frame,
-            text="Lời chào khi kết bạn:",
+        self.sheet_id_entry = customtkinter.CTkEntry(
+            sheet_id_container,
+            placeholder_text="Nhập Google Sheet ID",
+            height=30,
             font=customtkinter.CTkFont(size=12)
         )
-        greeting_label.grid(row=3, column=0, padx=15, pady=(0, 3), sticky="w")
+        self.sheet_id_entry.pack(side="left", fill="x", expand=True, padx=3)
 
-        # TextBox nhập lời chào
-        self.friend_greeting_textbox = customtkinter.CTkTextbox(
-            friend_frame,
-            height=80,
-            font=customtkinter.CTkFont(size=12)
-        )
-        self.friend_greeting_textbox.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 10))
-
-        # Lời chào mặc định
-        default_greeting = "Xin chào, mình là {my_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
-        self.friend_greeting_textbox.insert("1.0", default_greeting)
-
-        # Checkbox bỏ qua khách hàng đã xử lý
-        self.skip_processed_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
-        self.skip_processed_checkbox = customtkinter.CTkCheckBox(
-            friend_frame,
-            text="Bỏ qua khách hàng đã kết bạn thành công",
-            variable=self.skip_processed_var,
+        # Trạng thái kết nối Sheet
+        self.sheet_status_label = customtkinter.CTkLabel(
+            self.sheet_frame,
+            text="⚪ Chưa kết nối",
             font=customtkinter.CTkFont(size=12),
-            text_color="#28A745"
-        )
-        self.skip_processed_checkbox.grid(row=5, column=0, padx=15, pady=(0, 10), sticky="w")
-
-        # Frame chứa các nút
-        buttons_frame = customtkinter.CTkFrame(friend_frame, fg_color="transparent")
-        buttons_frame.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
-        buttons_frame.grid_columnconfigure(0, weight=1)
-        buttons_frame.grid_columnconfigure(1, weight=0)
-
-        # Nút kết bạn
-        self.add_friend_button = customtkinter.CTkButton(
-            buttons_frame,
-            text="Kết Bạn Hàng Loạt",
-            command=self.add_friends_bulk,
-            fg_color="#FFC107",
-            hover_color="#E0A800",
-            text_color="black",
-            height=36,
-            font=customtkinter.CTkFont(size=13, weight="bold")
-        )
-        self.add_friend_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-
-        # Nút tạm dừng/tiếp tục (Zalo)
-        self.zalo_pause_button = customtkinter.CTkButton(
-            buttons_frame,
-            text="Tạm dừng",
-            command=self.toggle_pause,
-            fg_color="#6C757D",
-            hover_color="#5A6268",
-            height=36,
-            width=120,
-            font=customtkinter.CTkFont(size=13, weight="bold"),
-            state="disabled"  # Mặc định disabled
-        )
-        self.zalo_pause_button.grid(row=0, column=1, sticky="ew")
-
-        # === 3. NHẮN TIN HÀNG LOẠT ===
-        message_frame = customtkinter.CTkFrame(scrollable_frame)
-        message_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-        message_frame.grid_columnconfigure(0, weight=1)
-
-        message_title = customtkinter.CTkLabel(
-            message_frame,
-            text="� Nhắn Tin Hàng Loạt",
-            font=customtkinter.CTkFont(weight="bold", size=14)
-        )
-        message_title.grid(row=0, column=0, pady=(10, 8), padx=10, sticky="w")
-
-        # Hướng dẫn sử dụng biến
-        help_label = customtkinter.CTkLabel(
-            message_frame,
-            text="Biến có sẵn: {name}, {phone}, {address}, {cccd}, {dob}, {contract_id}, {gender} (Nam→anh, Nữ→chị)",
-            font=customtkinter.CTkFont(size=11),
             text_color="gray"
         )
-        help_label.grid(row=1, column=0, padx=15, pady=(0, 5), sticky="w")
+        self.sheet_status_label.pack(pady=(0, 8), padx=12, anchor="w")
 
-        # TextBox nhập kịch bản
-        message_label = customtkinter.CTkLabel(
-            message_frame,
-            text="Kịch bản tin nhắn:",
-            font=customtkinter.CTkFont(size=12)
-        )
-        message_label.grid(row=2, column=0, padx=15, pady=(0, 3), sticky="w")
-
-        self.zalo_message_template = customtkinter.CTkTextbox(
-            message_frame,
-            height=120,
-            font=customtkinter.CTkFont(size=12)
-        )
-        self.zalo_message_template.grid(row=3, column=0, sticky="ew", padx=15, pady=(0, 10))
-
-        # Load kịch bản đã lưu hoặc dùng mặc định
-        saved_template = self.load_message_template()
-        if saved_template:
-            self.zalo_message_template.insert("1.0", saved_template)
-        else:
-            # Template mặc định
-            default_template = """Xin chào anh/chị {name},
-
-Chúng tôi xin thông báo về hợp đồng {contract_id}:
-- Số điện thoại: {phone}
-- Địa chỉ: {address}
-- Số CCCD: {cccd}
-
-Vui lòng liên hệ nếu có thắc mắc.
-Trân trọng!"""
-            self.zalo_message_template.insert("1.0", default_template)
-
-        # Nút lưu kịch bản
-        save_template_button = customtkinter.CTkButton(
-            message_frame,
-            text="💾 Lưu kịch bản",
-            command=self.save_message_template,
-            fg_color="#17A2B8",
-            hover_color="#138496",
-            height=32,
-            font=customtkinter.CTkFont(size=12)
-        )
-        save_template_button.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 10))
-
-        # Checkbox bỏ qua khách hàng đã gửi tin nhắn
-        self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
-        self.skip_sent_messages_checkbox = customtkinter.CTkCheckBox(
-            message_frame,
-            text="Bỏ qua khách hàng đã gửi tin nhắn thành công",
-            variable=self.skip_sent_messages_var,
-            font=customtkinter.CTkFont(size=12),
-            text_color="#28A745"
-        )
-        self.skip_sent_messages_checkbox.grid(row=5, column=0, padx=15, pady=(0, 5), sticky="w")
-
-        # Frame chứa các nút gửi tin nhắn
-        message_buttons_frame = customtkinter.CTkFrame(message_frame, fg_color="transparent")
-        message_buttons_frame.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
-        message_buttons_frame.grid_columnconfigure(0, weight=1)
-        message_buttons_frame.grid_columnconfigure(1, weight=0)
-
-        # Nút gửi tin nhắn
-        self.send_message_button = customtkinter.CTkButton(
-            message_buttons_frame,
-            text="Gửi Tin Nhắn Hàng Loạt",
-            command=self.send_bulk_messages,
-            fg_color="#28A745",
-            hover_color="#218838",
+        # Nút xuất sang Sheet
+        self.export_sheet_button = customtkinter.CTkButton(
+            self.sheet_frame,
+            text="Xuất Sang Google Sheet",
+            command=self.export_to_sheet_window,
+            fg_color="#0F9D58",
+            hover_color="#0B8043",
             height=36,
-            font=customtkinter.CTkFont(size=13, weight="bold")
+            font=customtkinter.CTkFont(size=13)
         )
-        self.send_message_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-
-        # Nút tạm dừng/tiếp tục cho gửi tin nhắn
-        self.message_pause_button = customtkinter.CTkButton(
-            message_buttons_frame,
-            text="Tạm dừng",
-            command=self.toggle_pause,
-            fg_color="#6C757D",
-            hover_color="#5A6268",
-            height=36,
-            width=120,
-            font=customtkinter.CTkFont(size=13, weight="bold"),
-            state="disabled"  # Mặc định disabled
-        )
-        self.message_pause_button.grid(row=0, column=1, sticky="ew")
+        self.export_sheet_button.pack(fill="x", padx=10, pady=(0, 10))
 
     def create_contract_check_tab(self):
         """Tạo nội dung cho tab Kiểm Tra Hợp Đồng"""
@@ -919,46 +1043,65 @@ Trân trọng!"""
         # === NHẬP LIỆU TỪ FILE ===
         file_frame = customtkinter.CTkFrame(main_frame)
         file_frame.pack(fill="x", padx=15, pady=(0, 15))
+        file_frame.grid_columnconfigure(0, weight=0)  # Cột nút (trái)
+        file_frame.grid_columnconfigure(1, weight=1)  # Cột thông tin (phải)
 
         file_title = customtkinter.CTkLabel(
             file_frame,
-            text="📂 Nhập Từ File Excel",
+            text="📂 Nhập Dữ Liệu",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         file_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
 
-        # Hiển thị file đã chọn
-        self.contract_file_label = customtkinter.CTkLabel(
-            file_frame,
-            text="Chưa chọn file",
-            font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.contract_file_label.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="w")
+        # === CỘT TRÁI: CÁC NÚT ===
+        contract_buttons_frame = customtkinter.CTkFrame(file_frame, fg_color="transparent")
+        contract_buttons_frame.grid(row=1, column=0, padx=(15, 10), pady=(0, 15), sticky="n")
 
-        # Số lượng hợp đồng
-        self.contract_count_label = customtkinter.CTkLabel(
-            file_frame,
-            text="Số lượng: 0",
-            font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.contract_count_label.grid(row=1, column=1, padx=15, pady=(0, 10), sticky="e")
-
-        # Nút chọn file
+        # Nút chọn file Excel
         self.select_contract_file_button = customtkinter.CTkButton(
-            file_frame,
+            contract_buttons_frame,
             text="Chọn File Excel",
             command=self.select_contract_file,
             fg_color="#007BFF",
             hover_color="#0056B3",
-            height=36,
+            height=36, width=150,
             font=customtkinter.CTkFont(size=13, weight="bold")
         )
-        self.select_contract_file_button.grid(row=2, column=0, columnspan=2, padx=15, pady=(0, 15), sticky="ew")
+        self.select_contract_file_button.pack(pady=3)
 
-        file_frame.grid_columnconfigure(0, weight=1)
-        file_frame.grid_columnconfigure(1, weight=0)
+        # Nút nhập từ Sheet
+        self.import_contract_from_sheet_button = customtkinter.CTkButton(
+            contract_buttons_frame,
+            text="Nhập từ Sheet",
+            command=self.import_contract_from_sheet,
+            fg_color="#0F9D58",
+            hover_color="#0B8043",
+            height=36, width=150,
+            font=customtkinter.CTkFont(size=13, weight="bold")
+        )
+        self.import_contract_from_sheet_button.pack(pady=3)
+
+        # === CỘT PHẢI: THÔNG TIN ===
+        contract_info_frame = customtkinter.CTkFrame(file_frame, fg_color="transparent")
+        contract_info_frame.grid(row=1, column=1, padx=(10, 15), pady=(0, 15), sticky="ew")
+
+        # Hiển thị file đã chọn
+        self.contract_file_label = customtkinter.CTkLabel(
+            contract_info_frame,
+            text="Chưa chọn nguồn dữ liệu",
+            font=customtkinter.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.contract_file_label.pack(anchor="w", pady=(0, 5))
+
+        # Số lượng hợp đồng
+        self.contract_count_label = customtkinter.CTkLabel(
+            contract_info_frame,
+            text="Số lượng: 0",
+            font=customtkinter.CTkFont(size=12, weight="bold"),
+            text_color="#0068FF"
+        )
+        self.contract_count_label.pack(anchor="w")
 
         # === NÚT KIỂM TRA ===
         self.check_contract_button = customtkinter.CTkButton(
@@ -3526,7 +3669,171 @@ Trân trọng!"""
         except Exception as e:
             self.log_to_gui(f"❌ Lỗi khi xóa tài khoản: {str(e)}")
 
+    def import_zalo_from_sheet(self):
+        """Nhập dữ liệu khách hàng từ Google Sheet cho Auto Zalo"""
+        try:
+            # Tạo dialog để nhập Sheet URL/ID
+            dialog = customtkinter.CTkInputDialog(
+                text="Nhập URL hoặc ID của Google Sheet:",
+                title="Nhập từ Google Sheet"
+            )
+            sheet_url = dialog.get_input()
 
+            if not sheet_url:
+                self.log_to_gui("❌ Đã hủy nhập từ Sheet")
+                return
+
+            self.log_to_gui("🔄 Đang kết nối với Google Sheets...")
+
+            # Trích xuất Sheet ID từ URL
+            try:
+                sheet_id = google_sheet_logic.get_spreadsheet_id_from_url(sheet_url)
+                self.log_to_gui(f"✅ Sheet ID: {sheet_id}")
+            except Exception as e:
+                raise Exception(f"URL/ID không hợp lệ: {str(e)}")
+
+            # Xác thực với Google Sheets API
+            self.log_to_gui("🔐 Đang xác thực với Google Sheets API...")
+            if not self.sheet_manager.authenticate():
+                raise Exception("Xác thực thất bại")
+
+            self.log_to_gui("✅ Xác thực thành công!")
+
+            # Hỏi người dùng về tên sheet và phạm vi
+            range_dialog = customtkinter.CTkInputDialog(
+                text="Nhập tên sheet và phạm vi (VD: Sheet1!A:Z):",
+                title="Phạm vi dữ liệu"
+            )
+            range_name = range_dialog.get_input()
+
+            if not range_name:
+                range_name = "Sheet1!A:Z"  # Mặc định
+
+            self.log_to_gui(f"📊 Đang đọc dữ liệu từ phạm vi: {range_name}...")
+
+            # Đọc dữ liệu từ Sheet
+            values = self.sheet_manager.read_sheet_data(sheet_id, range_name)
+            self.log_to_gui(f"✅ Đã đọc {len(values)} dòng từ Sheet")
+
+            # Parse dữ liệu thành format khách hàng
+            self.log_to_gui("🔄 Đang xử lý dữ liệu...")
+            self.zalo_customer_data = self.sheet_manager.parse_customer_data(values)
+
+            # Cập nhật giao diện
+            self.zalo_excel_path = f"Google Sheet: {sheet_id}"
+            self.zalo_file_label.configure(
+                text=f"Google Sheet (ID: {sheet_id[:20]}...)",
+                text_color="#0F9D58"
+            )
+            self.zalo_customer_count_label.configure(
+                text=f"Số khách hàng: {len(self.zalo_customer_data)}"
+            )
+
+            self.log_to_gui(f"✅ Đã nhập thành công {len(self.zalo_customer_data)} khách hàng từ Google Sheet!")
+
+            messagebox.showinfo(
+                "Thành công",
+                f"Đã nhập {len(self.zalo_customer_data)} khách hàng từ Google Sheet!",
+                parent=self
+            )
+
+        except FileNotFoundError as e:
+            self.log_to_gui(f"❌ {str(e)}")
+            messagebox.showerror(
+                "Thiếu file credentials",
+                str(e),
+                parent=self
+            )
+        except Exception as e:
+            self.log_to_gui(f"❌ Lỗi khi nhập từ Sheet: {str(e)}")
+            messagebox.showerror(
+                "Lỗi",
+                f"Không thể nhập dữ liệu từ Sheet!\n\n{str(e)}",
+                parent=self
+            )
+
+    def import_contract_from_sheet(self):
+        """Nhập dữ liệu hợp đồng từ Google Sheet cho Kiểm Tra Hợp Đồng"""
+        try:
+            # Tạo dialog để nhập Sheet URL/ID
+            dialog = customtkinter.CTkInputDialog(
+                text="Nhập URL hoặc ID của Google Sheet:",
+                title="Nhập từ Google Sheet"
+            )
+            sheet_url = dialog.get_input()
+
+            if not sheet_url:
+                self.log_to_gui("❌ Đã hủy nhập từ Sheet")
+                return
+
+            self.log_to_gui("🔄 Đang kết nối với Google Sheets...")
+
+            # Trích xuất Sheet ID từ URL
+            try:
+                sheet_id = google_sheet_logic.get_spreadsheet_id_from_url(sheet_url)
+                self.log_to_gui(f"✅ Sheet ID: {sheet_id}")
+            except Exception as e:
+                raise Exception(f"URL/ID không hợp lệ: {str(e)}")
+
+            # Xác thực với Google Sheets API
+            self.log_to_gui("🔐 Đang xác thực với Google Sheets API...")
+            if not self.sheet_manager.authenticate():
+                raise Exception("Xác thực thất bại")
+
+            self.log_to_gui("✅ Xác thực thành công!")
+
+            # Hỏi người dùng về tên sheet và phạm vi
+            range_dialog = customtkinter.CTkInputDialog(
+                text="Nhập tên sheet và phạm vi (VD: Sheet1!A:Z):",
+                title="Phạm vi dữ liệu"
+            )
+            range_name = range_dialog.get_input()
+
+            if not range_name:
+                range_name = "Sheet1!A:Z"  # Mặc định
+
+            self.log_to_gui(f"📊 Đang đọc dữ liệu từ phạm vi: {range_name}...")
+
+            # Đọc dữ liệu từ Sheet
+            values = self.sheet_manager.read_sheet_data(sheet_id, range_name)
+            self.log_to_gui(f"✅ Đã đọc {len(values)} dòng từ Sheet")
+
+            # Parse dữ liệu thành format hợp đồng
+            self.log_to_gui("🔄 Đang xử lý dữ liệu...")
+            self.contract_data = self.sheet_manager.parse_contract_data(values)
+
+            # Cập nhật giao diện
+            self.contract_excel_path = f"Google Sheet: {sheet_id}"
+            self.contract_file_label.configure(
+                text=f"Google Sheet (ID: {sheet_id[:20]}...)",
+                text_color="#0F9D58"
+            )
+            self.contract_count_label.configure(
+                text=f"Số lượng: {len(self.contract_data)}"
+            )
+
+            self.log_to_gui(f"✅ Đã nhập thành công {len(self.contract_data)} hợp đồng từ Google Sheet!")
+
+            messagebox.showinfo(
+                "Thành công",
+                f"Đã nhập {len(self.contract_data)} hợp đồng từ Google Sheet!",
+                parent=self
+            )
+
+        except FileNotFoundError as e:
+            self.log_to_gui(f"❌ {str(e)}")
+            messagebox.showerror(
+                "Thiếu file credentials",
+                str(e),
+                parent=self
+            )
+        except Exception as e:
+            self.log_to_gui(f"❌ Lỗi khi nhập từ Sheet: {str(e)}")
+            messagebox.showerror(
+                "Lỗi",
+                f"Không thể nhập dữ liệu từ Sheet!\n\n{str(e)}",
+                parent=self
+            )
 
 
 if __name__ == "__main__":
