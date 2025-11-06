@@ -7,6 +7,10 @@ zalo_session/
 zalo_session_*/
 zalo_accounts.json
 
+# Google Credentials (QUAN TRỌNG - KHÔNG COMMIT)
+credentials.json
+token.json
+
 # Python cache
 __pycache__/
 *.pyc
