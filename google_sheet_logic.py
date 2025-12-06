@@ -11,23 +11,24 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Phạm vi quyền truy cập Google Sheets
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']  # Quyền đọc và ghi
 
 class GoogleSheetManager:
     """Quản lý kết nối và đọc dữ liệu từ Google Sheets"""
     
-    def __init__(self, credentials_file='credentials.json', token_file='app_data/token.json'):
+    def __init__(self, credentials_file='credentials.json', token_file='token.json'):
         """
         Khởi tạo Google Sheet Manager
-        
+
         Args:
             credentials_file: Đường dẫn đến file credentials.json từ Google Cloud Console
-            token_file: Đường dẫn đến file lưu token xác thực
+            token_file: Đường dẫn đến file lưu token xác thực (mặc định: token.json)
         """
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.creds = None
         self.service = None
+        self.current_spreadsheet_id = None  # Lưu spreadsheet ID hiện tại để dùng lại
         
     def authenticate(self):
         """
@@ -48,15 +49,20 @@ class GoogleSheetManager:
                     self.creds.refresh(Request())
                 else:
                     # Kiểm tra file credentials.json
+                    abs_cred_path = os.path.abspath(self.credentials_file)
+                    current_dir = os.getcwd()
+
                     if not os.path.exists(self.credentials_file):
                         raise FileNotFoundError(
                             f"Không tìm thấy file '{self.credentials_file}'.\n\n"
+                            f"Đường dẫn tìm kiếm: {abs_cred_path}\n"
+                            f"Thư mục hiện tại: {current_dir}\n\n"
                             "Vui lòng tải file credentials.json từ Google Cloud Console:\n"
                             "1. Truy cập https://console.cloud.google.com/\n"
                             "2. Tạo project mới hoặc chọn project có sẵn\n"
                             "3. Bật Google Sheets API\n"
                             "4. Tạo OAuth 2.0 Client ID (Desktop app)\n"
-                            "5. Tải file credentials.json và đặt vào thư mục gốc"
+                            "5. Tải file credentials.json và đặt vào thư mục gốc của ứng dụng"
                         )
                     
                     # Đăng nhập lần đầu
@@ -66,7 +72,9 @@ class GoogleSheetManager:
                     self.creds = flow.run_local_server(port=0)
                 
                 # Lưu token để sử dụng lần sau
-                os.makedirs(os.path.dirname(self.token_file), exist_ok=True)
+                token_dir = os.path.dirname(self.token_file)
+                if token_dir:  # Chỉ tạo thư mục nếu có đường dẫn
+                    os.makedirs(token_dir, exist_ok=True)
                 with open(self.token_file, 'w') as token:
                     token.write(self.creds.to_json())
             
@@ -127,7 +135,74 @@ class GoogleSheetManager:
                 raise Exception(f"Lỗi HTTP {e.resp.status}: {str(e)}")
         except Exception as e:
             raise Exception(f"Lỗi khi đọc dữ liệu: {str(e)}")
-    
+
+    def write_sheet_data(self, spreadsheet_id, range_name, values):
+        """
+        Ghi dữ liệu vào Google Sheet
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+            range_name: Phạm vi ghi dữ liệu (VD: Sheet1!A1:G1)
+            values: Dữ liệu cần ghi (list of lists)
+
+        Returns:
+            dict: Kết quả từ API
+        """
+        try:
+            if not self.service:
+                raise Exception("Chưa xác thực. Vui lòng gọi authenticate() trước.")
+
+            body = {
+                'values': values
+            }
+
+            result = self.service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+
+            return result
+
+        except HttpError as e:
+            if e.resp.status == 403:
+                raise Exception(
+                    "Không có quyền ghi vào Google Sheet.\n\n"
+                    "Vui lòng:\n"
+                    "1. Chia sẻ Sheet với quyền 'Editor'\n"
+                    "2. Hoặc đặt Sheet ở chế độ 'Anyone with the link can edit'"
+                )
+            else:
+                raise Exception(f"Lỗi HTTP {e.resp.status}: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Lỗi khi ghi dữ liệu: {str(e)}")
+
+    def create_contract_headers(self, spreadsheet_id, sheet_name='Sheet1'):
+        """
+        Tạo header cho Sheet theo định dạng file Excel trong downloads_contracts
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+            sheet_name: Tên sheet (mặc định: Sheet1)
+
+        Returns:
+            bool: True nếu thành công
+        """
+        headers = [
+            'STT',
+            'Số hợp đồng',
+            'Họ tên',
+            'Ngày sinh',
+            'SĐT',
+            'Số CCCD',
+            'Ngày kết thúc'
+        ]
+
+        range_name = f"{sheet_name}!A1:G1"
+        self.write_sheet_data(spreadsheet_id, range_name, [headers])
+        return True
+
     def parse_customer_data(self, values):
         """
         Parse dữ liệu từ Sheet thành format cho Auto Zalo
@@ -269,6 +344,238 @@ class GoogleSheetManager:
             raise Exception("Không có dữ liệu hợp đồng hợp lệ trong Sheet")
         
         return contracts
+
+    def append_sheet_data(self, spreadsheet_id, range_name, values):
+        """
+        Thêm dữ liệu vào cuối sheet
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+            range_name: Phạm vi thêm (ví dụ: 'Sheet1!A1' hoặc 'Sheet1')
+            values: List of lists chứa dữ liệu cần thêm
+
+        Returns:
+            Số lượng rows đã thêm
+        """
+        try:
+            if not self.service:
+                raise Exception("Chưa xác thực. Vui lòng gọi authenticate() trước.")
+
+            body = {
+                'values': values
+            }
+
+            result = self.service.spreadsheets().values().append(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption='USER_ENTERED',
+                insertDataOption='INSERT_ROWS',
+                body=body
+            ).execute()
+
+            return result.get('updates', {}).get('updatedRows', 0)
+
+        except HttpError as error:
+            error_details = str(error)
+            if 'Unable to parse range' in error_details:
+                raise Exception(f"Lỗi format range: '{range_name}'. Vui lòng sử dụng format như 'Sheet1!A1' hoặc 'Sheet1'")
+            raise Exception(f"Lỗi khi thêm dữ liệu: {error}")
+
+    def clear_sheet_data(self, spreadsheet_id, range_name):
+        """
+        Xóa dữ liệu trong một phạm vi
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+            range_name: Phạm vi xóa (ví dụ: 'Sheet1!A1:D10')
+
+        Returns:
+            True nếu thành công
+        """
+        try:
+            if not self.service:
+                raise Exception("Chưa xác thực. Vui lòng gọi authenticate() trước.")
+
+            self.service.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=range_name
+            ).execute()
+
+            return True
+
+        except HttpError as error:
+            raise Exception(f"Lỗi khi xóa dữ liệu: {error}")
+
+    def batch_update_sheet(self, spreadsheet_id, data_list):
+        """
+        Cập nhật nhiều phạm vi cùng lúc
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+            data_list: List of dicts với format {'range': 'Sheet1!A1', 'values': [[...]]}
+
+        Returns:
+            Tổng số cells đã cập nhật
+        """
+        try:
+            if not self.service:
+                raise Exception("Chưa xác thực. Vui lòng gọi authenticate() trước.")
+
+            batch_data = []
+            for item in data_list:
+                batch_data.append({
+                    'range': item['range'],
+                    'values': item['values']
+                })
+
+            body = {
+                'valueInputOption': 'USER_ENTERED',
+                'data': batch_data
+            }
+
+            result = self.service.spreadsheets().values().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body=body
+            ).execute()
+
+            return result.get('totalUpdatedCells', 0)
+
+        except HttpError as error:
+            raise Exception(f"Lỗi khi batch update: {error}")
+
+    def get_spreadsheet_info(self, spreadsheet_id):
+        """
+        Lấy thông tin về spreadsheet
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+
+        Returns:
+            Dict chứa thông tin spreadsheet (title, sheets, url)
+        """
+        try:
+            if not self.service:
+                raise Exception("Chưa xác thực. Vui lòng gọi authenticate() trước.")
+
+            sheet_metadata = self.service.spreadsheets().get(
+                spreadsheetId=spreadsheet_id
+            ).execute()
+
+            title = sheet_metadata.get('properties', {}).get('title', 'Unknown')
+            sheets = sheet_metadata.get('sheets', [])
+            sheet_names = [sheet.get('properties', {}).get('title', '') for sheet in sheets]
+
+            return {
+                'title': title,
+                'sheets': sheet_names,
+                'url': f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+            }
+
+        except HttpError as error:
+            raise Exception(f"Lỗi khi lấy thông tin spreadsheet: {error}")
+
+    def set_spreadsheet_id(self, spreadsheet_id):
+        """
+        Lưu spreadsheet ID hiện tại để sử dụng cho các thao tác tiếp theo
+
+        Args:
+            spreadsheet_id: ID của Google Sheet
+        """
+        self.current_spreadsheet_id = spreadsheet_id
+
+    def get_current_spreadsheet_id(self):
+        """
+        Lấy spreadsheet ID hiện tại
+
+        Returns:
+            str: Spreadsheet ID hiện tại hoặc None
+        """
+        return self.current_spreadsheet_id
+
+    # === WRAPPER METHODS - Sử dụng spreadsheet_id đã lưu ===
+
+    def read_current_sheet(self, range_name):
+        """
+        Đọc dữ liệu từ sheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Args:
+            range_name: Phạm vi đọc (ví dụ: 'Sheet1!A1:D10')
+
+        Returns:
+            List of lists chứa dữ liệu
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.read_sheet_data(self.current_spreadsheet_id, range_name)
+
+    def write_current_sheet(self, range_name, values):
+        """
+        Ghi dữ liệu vào sheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Args:
+            range_name: Phạm vi ghi (ví dụ: 'Sheet1!A1')
+            values: List of lists chứa dữ liệu
+
+        Returns:
+            Số lượng cells đã cập nhật
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.write_sheet_data(self.current_spreadsheet_id, range_name, values)
+
+    def append_current_sheet(self, range_name, values):
+        """
+        Thêm dữ liệu vào sheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Args:
+            range_name: Phạm vi thêm (ví dụ: 'Sheet1!A1')
+            values: List of lists chứa dữ liệu
+
+        Returns:
+            Số lượng rows đã thêm
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.append_sheet_data(self.current_spreadsheet_id, range_name, values)
+
+    def clear_current_sheet(self, range_name):
+        """
+        Xóa dữ liệu trong sheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Args:
+            range_name: Phạm vi xóa (ví dụ: 'Sheet1!A1:D10')
+
+        Returns:
+            True nếu thành công
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.clear_sheet_data(self.current_spreadsheet_id, range_name)
+
+    def batch_update_current_sheet(self, data_list):
+        """
+        Batch update sheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Args:
+            data_list: List of dicts với format {'range': 'Sheet1!A1', 'values': [[...]]}
+
+        Returns:
+            Tổng số cells đã cập nhật
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.batch_update_sheet(self.current_spreadsheet_id, data_list)
+
+    def get_current_spreadsheet_info(self):
+        """
+        Lấy thông tin về spreadsheet hiện tại (sử dụng spreadsheet_id đã lưu)
+
+        Returns:
+            Dict chứa thông tin spreadsheet (title, sheets, url)
+        """
+        if not self.current_spreadsheet_id:
+            raise Exception("Chưa thiết lập spreadsheet ID. Vui lòng kết nối với Google Sheet trước.")
+        return self.get_spreadsheet_info(self.current_spreadsheet_id)
 
 
 def get_spreadsheet_id_from_url(url):
