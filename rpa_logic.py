@@ -271,7 +271,8 @@ def _perform_login_and_scrape_ids(
     username, password, 
     start_date_url, end_date_url, 
     pause_event, stop_event, 
-    status_callback=None
+    status_callback=None,
+    headless=False  # Thêm tham số headless
 ):
     """
     Hàm nội bộ: Thực hiện Giai đoạn 1 (Đăng nhập, Lọc, Lấy hết ID).
@@ -288,7 +289,22 @@ def _perform_login_and_scrape_ids(
     callback("-----------------------------------")
     
     p = sync_playwright().start()
-    browser = p.chromium.launch(headless=False, slow_mo=250)
+    # Cập nhật: sử dụng tham số headless, tắt slow_mo khi headless
+    # Thêm các args để tối ưu headless mode
+    launch_args = ['--disable-blink-features=AutomationControlled']
+    if headless:
+        launch_args.extend([
+            '--disable-gpu',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-setuid-sandbox'
+        ])
+    
+    browser = p.chromium.launch(
+        headless=headless, 
+        slow_mo=0 if headless else 250,
+        args=launch_args
+    )
     page = browser.new_page()
 
     try:
@@ -383,7 +399,8 @@ def check_contract_count(
     username, password, 
     start_date_ddmmyyyy, end_date_ddmmyyyy, 
     pause_event, stop_event, 
-    status_callback=None
+    status_callback=None,
+    headless=False  # Thêm tham số headless
 ):
     """Chức năng cho nút 'Kiểm tra số lượng'"""
     callback = lambda msg: _callback_handler(msg, status_callback)
@@ -399,7 +416,7 @@ def check_contract_count(
     
     playwright_instance, browser, page, contract_ids = _perform_login_and_scrape_ids(
         username, password, start_date_url, end_date_url,
-        pause_event, stop_event, status_callback
+        pause_event, stop_event, status_callback, headless
     )
 
     if browser: # Nếu hàm trên chạy thành công
@@ -421,7 +438,8 @@ def run_scrape_and_download_files(
     save_directory, 
     save_format, # (PDF hoặc JSON)
     pause_event, stop_event, 
-    status_callback=None
+    status_callback=None,
+    headless=False  # Thêm tham số headless
 ):
     """Chức năng cho nút 'Bắt Đầu Tải'"""
     callback = lambda msg: _callback_handler(msg, status_callback)
@@ -451,7 +469,7 @@ def run_scrape_and_download_files(
     # === GỌI GIAI ĐOẠN 1 ===
     playwright_instance, browser, page, contract_ids_to_process = _perform_login_and_scrape_ids(
         username, password, start_date_url, end_date_url,
-        pause_event, stop_event, status_callback
+        pause_event, stop_event, status_callback, headless
     )
 
     if not browser:
@@ -578,7 +596,8 @@ def run_scrape_and_export_details(
     start_date_ddmmyyyy, end_date_ddmmyyyy, 
     save_directory, 
     pause_event, stop_event, 
-    status_callback=None
+    status_callback=None,
+    headless=False  # Thêm tham số headless
 ):
     """
     Chức năng cho nút 'Lấy Chi Tiết Hợp Đồng (Excel)'.
@@ -611,7 +630,7 @@ def run_scrape_and_export_details(
     # === GỌI GIAI ĐOẠN 1: Lấy danh sách ID ===
     playwright_instance, browser, page, contract_ids_to_process = _perform_login_and_scrape_ids(
         username, password, start_date_url, end_date_url,
-        pause_event, stop_event, status_callback
+        pause_event, stop_event, status_callback, headless
     )
 
     if not browser:
