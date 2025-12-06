@@ -9,17 +9,108 @@ import os
 import json
 import base64
 import zalo_logic
-import google_sheet_logic  # Logic Google Sheets
 
 customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
+
+class InputDialog(customtkinter.CTkToplevel):
+    """Custom input dialog với customtkinter"""
+    def __init__(self, parent, title, prompt):
+        super().__init__(parent)
+        
+        self.result = None
+        
+        # Cấu hình window
+        self.title(title)
+        self.geometry("400x180")
+        self.resizable(False, False)
+        
+        # Center window
+        self.transient(parent)
+        self.grab_set()
+        
+        # Icon và prompt
+        icon_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        icon_frame.pack(pady=(20, 10), padx=20, fill="x")
+        
+        icon_label = customtkinter.CTkLabel(
+            icon_frame,
+            text="✏️",
+            font=customtkinter.CTkFont(size=24)
+        )
+        icon_label.pack(side="left", padx=(0, 10))
+        
+        prompt_label = customtkinter.CTkLabel(
+            icon_frame,
+            text=prompt,
+            font=customtkinter.CTkFont(size=13)
+        )
+        prompt_label.pack(side="left", fill="x", expand=True)
+        
+        # Entry
+        self.entry = customtkinter.CTkEntry(
+            self,
+            height=35,
+            font=customtkinter.CTkFont(size=13),
+            placeholder_text="Nhập tên kịch bản..."
+        )
+        self.entry.pack(pady=10, padx=20, fill="x")
+        self.entry.focus()
+        
+        # Buttons
+        button_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        button_frame.pack(pady=10, padx=20, fill="x")
+        
+        cancel_btn = customtkinter.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=self.on_cancel,
+            fg_color="gray",
+            hover_color="#5A6268",
+            width=100,
+            height=32
+        )
+        cancel_btn.pack(side="right", padx=(5, 0))
+        
+        ok_btn = customtkinter.CTkButton(
+            button_frame,
+            text="OK",
+            command=self.on_ok,
+            width=100,
+            height=32
+        )
+        ok_btn.pack(side="right")
+        
+        # Bind Enter key
+        self.entry.bind("<Return>", lambda e: self.on_ok())
+        self.entry.bind("<Escape>", lambda e: self.on_cancel())
+        
+        # Wait for window
+        self.wait_window()
+    
+    def on_ok(self):
+        self.result = self.entry.get()
+        self.destroy()
+    
+    def on_cancel(self):
+        self.result = None
+        self.destroy()
+    
+    def get_input(self):
+        return self.result
 
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Tool Automation")
+        self.title("Tool Automation - v1.3.0")
         self.geometry("850x700")
+        
+        # Print version để debug
+        print("="*60)
+        print("HD SAISON RPA Tool v1.3.0")
+        print("Headless mode variable: headless_mode_var")
+        print("="*60)
 
         # === CẤU HÌNH GRID CHO CỬA SỔ CHÍNH ===
         self.grid_columnconfigure(0, weight=1)
@@ -52,10 +143,7 @@ class App(customtkinter.CTk):
         self.tabview.add("Kiểm Tra Hợp Đồng")
         self.tabview.add("Gemini & Sheet")
 
-        # Cấu hình grid cho từng tab
-        self.tabview.tab("Trang Chủ").grid_columnconfigure(0, weight=1)
-        self.tabview.tab("Trang Chủ").grid_rowconfigure(2, weight=1)
-
+        # Cấu hình grid cho từng tab (Trang Chủ sẽ được config trong create_home_tab)
         self.tabview.tab("Tác Vụ").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Tác Vụ").grid_rowconfigure(3, weight=1)
 
@@ -79,9 +167,6 @@ class App(customtkinter.CTk):
         # Biến quản lý trạng thái tạm dừng
         self.is_paused = False
 
-        # Khởi tạo Google Sheet Manager
-        self.sheet_manager = google_sheet_logic.GoogleSheetManager()
-
         # === TAB 1: TRANG CHỦ ===
         self.create_home_tab()
 
@@ -99,88 +184,122 @@ class App(customtkinter.CTk):
 
         self.load_config()
         self.load_zalo_session_info()  # Load thông tin session Zalo
-        self._load_gemini_config()  # Load Gemini API Key
 
     def create_home_tab(self):
-        """Tạo nội dung cho tab Trang Chủ (Đăng nhập + Log)"""
+        """Tạo nội dung cho tab Trang Chủ"""
         home_tab = self.tabview.tab("Trang Chủ")
         
-        # === PHẦN ĐĂNG NHẬP ===
-        self.login_frame = customtkinter.CTkFrame(home_tab)
-        self.login_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        # Cấu hình grid cho home_tab: 1 cột, 2 hàng
+        home_tab.grid_columnconfigure(0, weight=1)
+        home_tab.grid_rowconfigure(0, weight=0)  # Hàng trên (đăng nhập) - auto height
+        home_tab.grid_rowconfigure(1, weight=1)  # Hàng dưới (log) - chiếm hết không gian còn lại
         
+        # === TRÊN: ĐĂNG NHẬP + TÍNH NĂNG ===
+        top_frame = customtkinter.CTkFrame(home_tab)
+        top_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        
+        # Đăng nhập
         self.login_title = customtkinter.CTkLabel(
-            self.login_frame,
+            top_frame,
             text="ĐĂNG NHẬP HỆ THỐNG",
-            font=customtkinter.CTkFont(weight="bold", size=16)
+            font=customtkinter.CTkFont(weight="bold", size=14)
         )
         self.login_title.pack(pady=(10, 8), padx=10)
 
         # Frame chứa các input
-        login_inputs = customtkinter.CTkFrame(self.login_frame, fg_color="transparent")
-        login_inputs.pack(pady=(0, 10), padx=20, fill="x")
+        login_inputs = customtkinter.CTkFrame(top_frame, fg_color="transparent")
+        login_inputs.pack(pady=(0, 5), padx=15, fill="x")
 
         self.username_label = customtkinter.CTkLabel(
             login_inputs,
             text="Tên đăng nhập:",
-            font=customtkinter.CTkFont(size=13)
+            font=customtkinter.CTkFont(size=12)
         )
-        self.username_label.pack(pady=(5, 2), anchor="w")
+        self.username_label.pack(pady=(3, 2), anchor="w")
         self.username_entry = customtkinter.CTkEntry(
             login_inputs,
             placeholder_text="Nhập tên đăng nhập",
-            height=32
+            height=30
         )
-        self.username_entry.pack(pady=3, fill="x")
+        self.username_entry.pack(pady=2, fill="x")
 
         self.password_label = customtkinter.CTkLabel(
             login_inputs,
             text="Mật khẩu:",
-            font=customtkinter.CTkFont(size=13)
+            font=customtkinter.CTkFont(size=12)
         )
-        self.password_label.pack(pady=(8, 2), anchor="w")
+        self.password_label.pack(pady=(6, 2), anchor="w")
         self.password_entry = customtkinter.CTkEntry(
             login_inputs,
             placeholder_text="Nhập mật khẩu",
             show="*",
-            height=32
+            height=30
         )
-        self.password_entry.pack(pady=3, fill="x")
+        self.password_entry.pack(pady=2, fill="x")
 
         # Checkboxes
-        checkbox_frame = customtkinter.CTkFrame(login_inputs, fg_color="transparent")
-        checkbox_frame.pack(pady=8, fill="x")
-
         self.show_password_check = customtkinter.CTkCheckBox(
-            checkbox_frame,
+            login_inputs,
             text="Hiện mật khẩu",
             command=self.toggle_password_visibility,
-            font=customtkinter.CTkFont(size=12)
+            font=customtkinter.CTkFont(size=11)
         )
-        self.show_password_check.pack(side="left", padx=(0, 10))
+        self.show_password_check.pack(pady=(6, 2), anchor="w")
 
         self.save_creds_check = customtkinter.CTkCheckBox(
-            checkbox_frame,
+            login_inputs,
             text="Lưu thông tin đăng nhập",
-            font=customtkinter.CTkFont(size=12)
+            font=customtkinter.CTkFont(size=11)
         )
-        self.save_creds_check.pack(side="left")
+        self.save_creds_check.pack(pady=2, anchor="w")
 
-        # === PHẦN LOG TRẠNG THÁI ===
-        self.log_label = customtkinter.CTkLabel(
-            home_tab,
+        # Divider
+        separator1 = customtkinter.CTkFrame(top_frame, height=2, fg_color="gray30")
+        separator1.pack(fill="x", padx=15, pady=8)
+
+        # Tính năng
+        features_label = customtkinter.CTkLabel(
+            top_frame,
             text="TRẠNG THÁI HỆ THỐNG",
-            font=customtkinter.CTkFont(weight="bold", size=15)
+            font=customtkinter.CTkFont(weight="bold", size=13)
         )
-        self.log_label.grid(row=1, column=0, sticky="w", padx=10, pady=(10, 5))
+        features_label.pack(pady=(5, 8), padx=10)
+
+        features_frame = customtkinter.CTkFrame(top_frame, fg_color="transparent")
+        features_frame.pack(pady=(0, 10), padx=15, fill="x")
+
+        # Checkbox chế độ headless
+        self.headless_mode_var = customtkinter.BooleanVar(value=False)
+        self.headless_checkbox = customtkinter.CTkCheckBox(
+            features_frame,
+            text="⚙️ Chạy ngầm",
+            variable=self.headless_mode_var,
+            font=customtkinter.CTkFont(size=11)
+        )
+        self.headless_checkbox.pack(pady=5, anchor="w")
+        
+        # Spacer để đảm bảo nội dung không bị che
+        spacer = customtkinter.CTkFrame(top_frame, height=20, fg_color="transparent")
+        spacer.pack(fill="x")
+        
+        # === DƯỚI: LOG TRẠNG THÁI ===
+        log_container = customtkinter.CTkFrame(home_tab)
+        log_container.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        
+        log_title = customtkinter.CTkLabel(
+            log_container,
+            text="📋 NHẬT KÝ HỆ THỐNG",
+            font=customtkinter.CTkFont(weight="bold", size=14)
+        )
+        log_title.pack(pady=(8, 5), padx=10, anchor="w")
 
         self.log_textbox = customtkinter.CTkTextbox(
-            home_tab,
+            log_container,
             state="disabled",
             wrap="word",
-            font=customtkinter.CTkFont(size=12)
+            font=customtkinter.CTkFont(size=11)
         )
-        self.log_textbox.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def create_tasks_tab(self):
         """Tạo nội dung cho tab Tác Vụ (Các nút điều khiển)"""
@@ -349,7 +468,7 @@ class App(customtkinter.CTk):
         
         self.rpa_label = customtkinter.CTkLabel(
             self.rpa_frame,
-            text="🌐 TÁC VỤ TỰ ĐỘNG HÓA (ONLINE)",
+            text="TÁC VỤ TỰ ĐỘNG HÓA (ONLINE)",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         self.rpa_label.pack(pady=(10, 8))
@@ -569,7 +688,7 @@ class App(customtkinter.CTk):
         status_title.grid(row=3, column=0, padx=(0, 10), pady=5, sticky="w")
 
         self.zalo_status_label = customtkinter.CTkLabel(
-            info_right_frame, text="❌ Inactive", font=customtkinter.CTkFont(size=12),
+            info_right_frame, text="Inactive", font=customtkinter.CTkFont(size=12),
             text_color="red"
         )
         self.zalo_status_label.grid(row=3, column=1, pady=5, sticky="w")
@@ -788,6 +907,57 @@ class App(customtkinter.CTk):
         # === CỘT PHẢI: Ô NHẬP LIỆU ===
         message_input_frame = customtkinter.CTkFrame(message_frame, fg_color="transparent")
         message_input_frame.grid(row=1, column=1, padx=(10, 15), pady=(0, 15), sticky="nsew")
+        
+        # Dropdown chọn kịch bản đã lưu
+        template_selection_frame = customtkinter.CTkFrame(message_input_frame, fg_color="transparent")
+        template_selection_frame.pack(fill="x", pady=(0, 8))
+        
+        template_select_label = customtkinter.CTkLabel(
+            template_selection_frame,
+            text="Kịch bản đã lưu:",
+            font=customtkinter.CTkFont(size=12)
+        )
+        template_select_label.pack(side="left", padx=(0, 8))
+        
+        # Load danh sách kịch bản
+        self.template_names = self.get_saved_template_names()
+        template_options = self.template_names if self.template_names else ["(Chưa có kịch bản)"]
+        
+        self.template_dropdown = customtkinter.CTkComboBox(
+            template_selection_frame,
+            values=template_options,
+            command=self.on_template_selected,
+            width=200,
+            font=customtkinter.CTkFont(size=12)
+        )
+        self.template_dropdown.pack(side="left", padx=(0, 8))
+        
+        if self.template_names:
+            self.template_dropdown.set(self.template_names[0])
+        
+        # Nút refresh danh sách
+        refresh_template_button = customtkinter.CTkButton(
+            template_selection_frame,
+            text="🔄",
+            command=self.refresh_template_list,
+            width=40,
+            height=28,
+            font=customtkinter.CTkFont(size=14)
+        )
+        refresh_template_button.pack(side="left", padx=(0, 5))
+        
+        # Nút xoá kịch bản
+        delete_template_button = customtkinter.CTkButton(
+            template_selection_frame,
+            text="🗑️",
+            command=self.delete_message_template,
+            width=40,
+            height=28,
+            fg_color="#DC3545",
+            hover_color="#C82333",
+            font=customtkinter.CTkFont(size=14)
+        )
+        delete_template_button.pack(side="left")
 
         # Hướng dẫn sử dụng biến
         help_label = customtkinter.CTkLabel(
@@ -813,22 +983,15 @@ class App(customtkinter.CTk):
         )
         self.zalo_message_template.pack(fill="both", expand=True, pady=(0, 10))
 
-        # Load kịch bản đã lưu hoặc dùng mặc định
-        saved_template = self.load_message_template()
-        if saved_template:
-            self.zalo_message_template.insert("1.0", saved_template)
+        # Load kịch bản: Nếu có kịch bản đã chọn thì load, không thì dùng default
+        if self.template_names:
+            saved_template = self.load_message_template(self.template_names[0])
+            if saved_template:
+                self.zalo_message_template.insert("1.0", saved_template)
+            else:
+                self._insert_default_template()
         else:
-            # Template mặc định
-            default_template = """Xin chào anh/chị {name},
-
-Chúng tôi xin thông báo về hợp đồng {contract_id}:
-- Số điện thoại: {phone}
-- Địa chỉ: {address}
-- Số CCCD: {cccd}
-
-Vui lòng liên hệ nếu có thắc mắc.
-Trân trọng!"""
-            self.zalo_message_template.insert("1.0", default_template)
+            self._insert_default_template()
 
         # Checkbox bỏ qua khách hàng đã gửi tin nhắn
         self.skip_sent_messages_var = customtkinter.BooleanVar(value=True)  # Mặc định bật
@@ -845,139 +1008,13 @@ Trân trọng!"""
         """Tạo nội dung cho tab Gemini & Sheet"""
         gemini_sheet_tab = self.tabview.tab("Gemini & Sheet")
 
-        # === TIÊU ĐỀ ===
-        title = customtkinter.CTkLabel(
+        # Placeholder - Sẽ thêm nội dung sau
+        placeholder = customtkinter.CTkLabel(
             gemini_sheet_tab,
-            text="🤖 GEMINI & GOOGLE SHEET",
-            font=customtkinter.CTkFont(weight="bold", size=16)
+            text="Tab Gemini & Sheet\n(Sẽ thêm nội dung sau)",
+            font=customtkinter.CTkFont(size=14)
         )
-        title.grid(row=0, column=0, pady=(10, 5), sticky="ew", padx=10)
-
-        # === SCROLLABLE FRAME ===
-        scrollable_frame = customtkinter.CTkScrollableFrame(gemini_sheet_tab, fg_color="transparent")
-        scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        scrollable_frame.grid_columnconfigure(0, weight=1)
-
-        # === 1. KẾT NỐI API GEMINI ===
-        self.gemini_frame = customtkinter.CTkFrame(scrollable_frame)
-        self.gemini_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-
-        self.gemini_label = customtkinter.CTkLabel(
-            self.gemini_frame,
-            text="🤖 KẾT NỐI API GEMINI",
-            font=customtkinter.CTkFont(weight="bold", size=14)
-        )
-        self.gemini_label.pack(pady=(10, 8))
-
-        # Frame chứa API Key
-        api_key_container = customtkinter.CTkFrame(self.gemini_frame, fg_color="transparent")
-        api_key_container.pack(pady=(0, 8), padx=12, fill="x")
-
-        self.api_key_label = customtkinter.CTkLabel(
-            api_key_container,
-            text="API Key:",
-            font=customtkinter.CTkFont(size=13)
-        )
-        self.api_key_label.pack(side="left", padx=(0, 5))
-
-        self.api_key_entry = customtkinter.CTkEntry(
-            api_key_container,
-            placeholder_text="Nhập Gemini API Key",
-            show="*",
-            height=30,
-            font=customtkinter.CTkFont(size=12)
-        )
-        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=3)
-
-        # Checkbox hiện API Key
-        self.show_api_key_check = customtkinter.CTkCheckBox(
-            self.gemini_frame,
-            text="Hiện API Key",
-            command=self.toggle_api_key_visibility,
-            font=customtkinter.CTkFont(size=12)
-        )
-        self.show_api_key_check.pack(pady=(0, 8), padx=12, anchor="w")
-
-        # Trạng thái kết nối
-        self.gemini_status_label = customtkinter.CTkLabel(
-            self.gemini_frame,
-            text="⚪ Chưa kết nối",
-            font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.gemini_status_label.pack(pady=(0, 8), padx=12, anchor="w")
-
-        # Nút kết nối
-        self.connect_gemini_button = customtkinter.CTkButton(
-            self.gemini_frame,
-            text="Kết Nối Gemini",
-            command=self.connect_gemini,
-            fg_color="#7B1FA2",
-            hover_color="#6A1B9A",
-            height=36,
-            font=customtkinter.CTkFont(size=13)
-        )
-        self.connect_gemini_button.pack(fill="x", padx=10, pady=(0, 10))
-
-        # === 2. GOOGLE SHEET ===
-        self.sheet_frame = customtkinter.CTkFrame(scrollable_frame)
-        self.sheet_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
-
-        self.sheet_label = customtkinter.CTkLabel(
-            self.sheet_frame,
-            text="📊 GOOGLE SHEET",
-            font=customtkinter.CTkFont(weight="bold", size=14)
-        )
-        self.sheet_label.pack(pady=(10, 8))
-
-        # Hướng dẫn
-        sheet_help = customtkinter.CTkLabel(
-            self.sheet_frame,
-            text="Xuất dữ liệu lên Google Sheets",
-            font=customtkinter.CTkFont(size=11),
-            text_color="gray"
-        )
-        sheet_help.pack(pady=(0, 8), padx=12, anchor="w")
-
-        # Frame chứa Sheet ID
-        sheet_id_container = customtkinter.CTkFrame(self.sheet_frame, fg_color="transparent")
-        sheet_id_container.pack(pady=(0, 8), padx=12, fill="x")
-
-        self.sheet_id_label = customtkinter.CTkLabel(
-            sheet_id_container,
-            text="Sheet ID:",
-            font=customtkinter.CTkFont(size=13)
-        )
-        self.sheet_id_label.pack(side="left", padx=(0, 5))
-
-        self.sheet_id_entry = customtkinter.CTkEntry(
-            sheet_id_container,
-            placeholder_text="Nhập Google Sheet ID",
-            height=30,
-            font=customtkinter.CTkFont(size=12)
-        )
-        self.sheet_id_entry.pack(side="left", fill="x", expand=True, padx=3)
-
-        # Trạng thái kết nối Sheet
-        self.sheet_status_label = customtkinter.CTkLabel(
-            self.sheet_frame,
-            text="⚪ Chưa kết nối",
-            font=customtkinter.CTkFont(size=12),
-            text_color="gray"
-        )
-        self.sheet_status_label.pack(pady=(0, 8), padx=12, anchor="w")
-
-        # Nút xuất sang Sheet
-        self.export_sheet_button = customtkinter.CTkButton(
-            self.sheet_frame,
-            text="Xuất Sang Google Sheet",
-            command=self.export_to_sheet_window,
-            fg_color="#0F9D58",
-            hover_color="#0B8043",
-            height=36,
-            font=customtkinter.CTkFont(size=13)
-        )
-        self.export_sheet_button.pack(fill="x", padx=10, pady=(0, 10))
+        placeholder.pack(expand=True)
 
     def create_contract_check_tab(self):
         """Tạo nội dung cho tab Kiểm Tra Hợp Đồng"""
@@ -1001,7 +1038,7 @@ Trân trọng!"""
 
         manual_title = customtkinter.CTkLabel(
             manual_frame,
-            text="📝 Nhập Thủ Công",
+            text="✍️ Nhập Thủ Công",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         manual_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
@@ -1048,7 +1085,7 @@ Trân trọng!"""
 
         file_title = customtkinter.CTkLabel(
             file_frame,
-            text="📂 Nhập Dữ Liệu",
+            text="📄 Nhập Dữ Liệu",
             font=customtkinter.CTkFont(weight="bold", size=14)
         )
         file_title.grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=10, sticky="w")
@@ -1133,11 +1170,11 @@ Trân trọng!"""
             try:
                 # Mở thư mục trong File Explorer
                 subprocess.Popen(f'explorer "{folder_path}"')
-                self.log_to_gui(f"✅ Đã mở thư mục: {folder_path}")
+                self.log_to_gui(f"Đã mở thư mục: {folder_path}")
             except Exception as e:
-                self.log_to_gui(f"❌ Lỗi khi mở thư mục: {e}")
+                self.log_to_gui(f"Lỗi khi mở thư mục: {e}")
         else:
-            self.log_to_gui("❌ Thư mục không tồn tại hoặc chưa được chọn!")
+            self.log_to_gui("Thư mục không tồn tại hoặc chưa được chọn!")
 
     def log_to_gui(self, message):
         self.after(0, self._update_log_textbox, message)
@@ -1202,6 +1239,11 @@ Trân trọng!"""
         self.extract_button.configure(state="normal")
         self.pause_button.configure(state="disabled", text="Tạm Dừng", fg_color="gray")
         self.stop_button.configure(state="disabled")
+    
+    def _show_completion_notification(self, title, message, success=True):
+        """Hiển thị thông báo hoàn thành tác vụ"""
+        icon = "info" if success else "warning"
+        messagebox.showinfo(title, message, parent=self) if success else messagebox.showwarning(title, message, parent=self)
 
     # === TÁC VỤ 1: CHẠY LUỒNG TRÍCH XUẤT LOCAL EXCEL ===
     
@@ -1258,14 +1300,21 @@ Trân trọng!"""
             self.log_to_gui(f"Đang xuất ra file Excel: {save_path}")
             logic_convert_pdf.export_data_to_excel(results, save_path)
             
-            self.log_to_gui(f"✅ HOÀN TẤT! Đã lưu file Excel thành công (từ file local).")
+            self.log_to_gui(f"HOÀN TẤT! Đã lưu file Excel thành công (từ file local).")
+            
+            # Hiển thị thông báo hoàn thành
+            self.after(0, lambda: self._show_completion_notification(
+                "Trích xuất hoàn tất",
+                f"Đã trích xuất {len(results)} hợp đồng và lưu vào:\n{save_path}",
+                success=True
+            ))
 
         except Exception as e:
             if "openpyxl" in str(e):
-                self.log_to_gui("❌ LỖI: Vui lòng cài đặt 'openpyxl' để xuất Excel.")
+                self.log_to_gui("LỖI: Vui lòng cài đặt 'openpyxl' để xuất Excel.")
                 self.log_to_gui("Chạy lệnh: pip install openpyxl")
             else:
-                self.log_to_gui(f"❌ LỖI TRÍCH XUẤT: {e}")
+                self.log_to_gui(f"LỖI TRÍCH XUẤT: {e}")
         finally:
             self.after(0, self._enable_all_controls)
             
@@ -1279,6 +1328,9 @@ Trân trọng!"""
         if not inputs: return
         username, password, start_date_str, end_date_str = inputs
         
+        # Lấy headless mode từ checkbox
+        headless = self.headless_mode_var.get()
+        
         self._disable_all_controls(is_rpa_task=True)
         self.pause_button.configure(state="disabled", text="Tạm Dừng", fg_color="gray") # Không thể tạm dừng khi Kiểm tra
         
@@ -1286,14 +1338,48 @@ Trân trọng!"""
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
         self.log_to_gui("--- BẮT ĐẦU KIỂM TRA SỐ LƯỢNG HỢP ĐỒNG ---")
+        if headless:
+            self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
 
         self.rpa_thread = threading.Thread(
-            target=rpa_logic.check_contract_count,
-            args=(username, password, start_date_str, end_date_str,
-                  self.pause_event, self.stop_event, self.log_to_gui),
+            target=self._run_check_with_notification,
+            args=(username, password, start_date_str, end_date_str, headless),
             daemon=True 
         )
         self.rpa_thread.start()
+    
+    def _run_check_with_notification(self, username, password, start_date_str, end_date_str, headless):
+        """Wrapper để thêm notification cho check_contract_count"""
+        try:
+            # Biến để lưu kết quả
+            self.check_result = {'count': 0, 'success': False}
+            
+            # Tạo callback wrapper để capture kết quả
+            def callback_wrapper(message):
+                self.log_to_gui(message)
+                # Capture số lượng từ message
+                if "TÌM THẤY TỔNG CỘNG" in message:
+                    import re
+                    match = re.search(r'(\d+)\s+HỢP ĐỒNG', message)
+                    if match:
+                        self.check_result['count'] = int(match.group(1))
+                        self.check_result['success'] = True
+            
+            # Gọi hàm RPA với callback wrapper
+            rpa_logic.check_contract_count(
+                username, password, start_date_str, end_date_str,
+                self.pause_event, self.stop_event, callback_wrapper, headless
+            )
+            
+            # Hiển thị notification nếu thành công
+            if self.check_result['success']:
+                self.after(0, lambda: self._show_completion_notification(
+                    "Kiểm tra hoàn tất",
+                    f"Tìm thấy tổng cộng {self.check_result['count']} hợp đồng trong khoảng thời gian đã chọn.",
+                    success=True
+                ))
+        except Exception as e:
+            self.log_to_gui(f"Lỗi: {e}")
 
     # === TÁC VỤ 3: CHẠY LUỒNG TẢI FILE (RPA) ===
     
@@ -1312,6 +1398,9 @@ Trân trọng!"""
 
         save_format_value = self.save_format_button.get()
         save_format = "JSON" if save_format_value == "JSON" else "PDF"
+        
+        # Lấy headless mode từ checkbox
+        headless = self.headless_mode_var.get()
 
         self._disable_all_controls(is_rpa_task=True)
         
@@ -1319,15 +1408,51 @@ Trân trọng!"""
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
         self.log_to_gui(f"--- BẮT ĐẦU KỊCH BẢN TẢI FILE (LƯU DẠNG: {save_format}) ---")
+        if headless:
+            self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
 
         self.rpa_thread = threading.Thread(
-            target=rpa_logic.run_scrape_and_download_files,
+            target=self._run_download_with_notification,
             args=(username, password, start_date_str, end_date_str,
-                  save_directory, save_format,
-                  self.pause_event, self.stop_event, self.log_to_gui),
+                  save_directory, save_format, headless),
             daemon=True 
         )
         self.rpa_thread.start()
+    
+    def _run_download_with_notification(self, username, password, start_date_str, end_date_str, 
+                                        save_directory, save_format, headless):
+        """Wrapper để thêm notification cho run_scrape_and_download_files"""
+        try:
+            # Biến để lưu kết quả
+            self.download_result = {'count': 0, 'success': False, 'format': save_format}
+            
+            # Tạo callback wrapper để capture kết quả
+            def callback_wrapper(message):
+                self.log_to_gui(message)
+                # Capture kết quả
+                if "HOÀN TẤT" in message and "ĐÃ TẢI XONG" in message:
+                    import re
+                    match = re.search(r'(\d+)\s+HỢP ĐỒNG', message)
+                    if match:
+                        self.download_result['count'] = int(match.group(1))
+                        self.download_result['success'] = True
+            
+            # Gọi hàm RPA
+            rpa_logic.run_scrape_and_download_files(
+                username, password, start_date_str, end_date_str,
+                save_directory, save_format,
+                self.pause_event, self.stop_event, callback_wrapper, headless
+            )
+            
+            # Hiển thị notification nếu thành công
+            if self.download_result['success']:
+                self.after(0, lambda: self._show_completion_notification(
+                    "Tải file hoàn tất",
+                    f"Đã tải xong {self.download_result['count']} hợp đồng ({save_format}).\nLưu tại: {save_directory}",
+                    success=True
+                ))
+        except Exception as e:
+            self.log_to_gui(f"Lỗi: {e}")
 
     # === TÁC VỤ 4: CHẠY LUỒNG CÀO CHI TIẾT (RPA) ===
     
@@ -1343,6 +1468,9 @@ Trân trọng!"""
         if not save_directory:
             self.log_to_gui("LỖI: Vui lòng chọn thư mục lưu file (Excel).")
             return
+        
+        # Lấy headless mode từ checkbox
+        headless = self.headless_mode_var.get()
 
         self._disable_all_controls(is_rpa_task=True)
         
@@ -1350,15 +1478,51 @@ Trân trọng!"""
         self.log_textbox.delete("1.0", "end")
         self.log_textbox.configure(state="disabled")
         self.log_to_gui(f"--- BẮT ĐẦU KỊCH BẢN CÀO (SCRAPE) CHI TIẾT RA EXCEL ---")
+        if headless:
+            self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
 
         self.rpa_thread = threading.Thread(
-            target=rpa_logic.run_scrape_and_export_details,
+            target=self._run_scrape_details_with_notification,
             args=(username, password, start_date_str, end_date_str,
-                  save_directory,
-                  self.pause_event, self.stop_event, self.log_to_gui),
+                  save_directory, headless),
             daemon=True 
         )
         self.rpa_thread.start()
+    
+    def _run_scrape_details_with_notification(self, username, password, start_date_str, end_date_str, 
+                                              save_directory, headless):
+        """Wrapper để thêm notification cho run_scrape_and_export_details"""
+        try:
+            # Biến để lưu kết quả
+            self.scrape_result = {'count': 0, 'success': False}
+            
+            # Tạo callback wrapper để capture kết quả
+            def callback_wrapper(message):
+                self.log_to_gui(message)
+                # Capture kết quả
+                if "HOÀN TẤT" in message and "ĐÃ CÀO XONG" in message:
+                    import re
+                    match = re.search(r'(\d+)\s+HỢP ĐỒNG', message)
+                    if match:
+                        self.scrape_result['count'] = int(match.group(1))
+                        self.scrape_result['success'] = True
+            
+            # Gọi hàm RPA
+            rpa_logic.run_scrape_and_export_details(
+                username, password, start_date_str, end_date_str,
+                save_directory,
+                self.pause_event, self.stop_event, callback_wrapper, headless
+            )
+            
+            # Hiển thị notification nếu thành công
+            if self.scrape_result['success']:
+                self.after(0, lambda: self._show_completion_notification(
+                    "Cào dữ liệu hoàn tất",
+                    f"Đã cào xong {self.scrape_result['count']} hợp đồng và xuất ra Excel.\nLưu tại: {save_directory}",
+                    success=True
+                ))
+        except Exception as e:
+            self.log_to_gui(f"Lỗi: {e}")
 
     # --- Các hàm helper còn lại ---
     
@@ -1418,99 +1582,6 @@ Trân trọng!"""
         else:
             self.password_entry.configure(show="*")
 
-    def toggle_api_key_visibility(self):
-        """Hiện/ẩn API Key"""
-        if self.show_api_key_check.get() == 1:
-            self.api_key_entry.configure(show="")
-        else:
-            self.api_key_entry.configure(show="*")
-
-    def connect_gemini(self):
-        """Kết nối với Gemini API"""
-        api_key = self.api_key_entry.get().strip()
-
-        if not api_key:
-            self.log_to_gui("❌ Vui lòng nhập Gemini API Key!")
-            messagebox.showwarning(
-                "Thiếu API Key",
-                "Vui lòng nhập Gemini API Key để kết nối!",
-                parent=self
-            )
-            return
-
-        # Chạy trong thread riêng để không block UI
-        connect_thread = threading.Thread(
-            target=self._run_gemini_connection,
-            args=(api_key,),
-            daemon=True
-        )
-        connect_thread.start()
-
-    def _run_gemini_connection(self, api_key):
-        """Thread worker để kết nối Gemini API"""
-        try:
-            self.log_to_gui("⏳ Đang kết nối với Gemini API...")
-            self.gemini_status_label.configure(text="⏳ Đang kết nối...", text_color="orange")
-
-            # TODO: Thêm logic kết nối Gemini API ở đây
-            # Ví dụ:
-            # import google.generativeai as genai
-            # genai.configure(api_key=api_key)
-            # model = genai.GenerativeModel('gemini-pro')
-            # response = model.generate_content("Test connection")
-
-            # Giả lập kết nối thành công (tạm thời)
-            import time
-            time.sleep(2)
-
-            self.log_to_gui("✅ Kết nối Gemini API thành công!")
-            self.gemini_status_label.configure(text="✅ Đã kết nối", text_color="green")
-
-            # Lưu API Key vào config
-            self._save_gemini_config(api_key)
-
-            messagebox.showinfo(
-                "Thành công",
-                "Đã kết nối với Gemini API thành công!",
-                parent=self
-            )
-
-        except Exception as e:
-            self.log_to_gui(f"❌ Lỗi kết nối Gemini API: {str(e)}")
-            self.gemini_status_label.configure(text="❌ Kết nối thất bại", text_color="red")
-            messagebox.showerror(
-                "Lỗi kết nối",
-                f"Không thể kết nối với Gemini API:\n{str(e)}",
-                parent=self
-            )
-
-    def _save_gemini_config(self, api_key):
-        """Lưu Gemini API Key vào config"""
-        try:
-            gemini_config_file = os.path.join(self.app_data_dir, "gemini_config.json")
-            encoded_key = base64.b64encode(api_key.encode()).decode()
-            config_data = {"api_key": encoded_key}
-            with open(gemini_config_file, "w") as f:
-                json.dump(config_data, f)
-            self.log_to_gui("💾 Đã lưu Gemini API Key")
-        except Exception as e:
-            self.log_to_gui(f"⚠️ Không thể lưu API Key: {str(e)}")
-
-    def _load_gemini_config(self):
-        """Load Gemini API Key từ config"""
-        try:
-            gemini_config_file = os.path.join(self.app_data_dir, "gemini_config.json")
-            if os.path.exists(gemini_config_file):
-                with open(gemini_config_file, "r") as f:
-                    config_data = json.load(f)
-                    encoded_key = config_data.get("api_key", "")
-                    if encoded_key:
-                        api_key = base64.b64decode(encoded_key.encode()).decode()
-                        self.api_key_entry.insert(0, api_key)
-                        self.log_to_gui("📥 Đã load Gemini API Key từ config")
-        except Exception as e:
-            self.log_to_gui(f"⚠️ Không thể load API Key: {str(e)}")
-
     def select_folder(self):
         path = filedialog.askdirectory(initialdir=self.folder_entry.get())
         if path:
@@ -1567,7 +1638,7 @@ Trân trọng!"""
 
             # Kiểm tra đã chọn tài khoản chưa
             if not self.current_account_id:
-                self.log_to_gui("❌ Vui lòng chọn tài khoản trước!")
+                self.log_to_gui("Vui lòng chọn tài khoản trước!")
                 messagebox.showwarning(
                     "Cảnh báo",
                     "Vui lòng chọn tài khoản Zalo trước khi kiểm tra!",
@@ -1575,7 +1646,7 @@ Trân trọng!"""
                 )
                 return
 
-            self.log_to_gui("⏳ Đang kiểm tra trạng thái Zalo...")
+            self.log_to_gui("[CHO] Đang kiểm tra trạng thái Zalo...")
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
@@ -1584,14 +1655,14 @@ Trân trọng!"""
             success, p, context, page = session_manager.login_with_session(max_wait_time=30)
 
             if not success:
-                self.log_to_gui("❌ Không thể kết nối Zalo")
+                self.log_to_gui("Không thể kết nối Zalo")
                 if context:
                     context.close()
                 if p:
                     p.stop()
                 return
 
-            self.log_to_gui("✅ Đã kết nối Zalo")
+            self.log_to_gui("Đã kết nối Zalo")
 
             # Tạo automation instance
             automation = zalo_automation.ZaloAutomation(page)
@@ -1614,10 +1685,10 @@ Trân trọng!"""
                 status='active'
             )
 
-            self.log_to_gui(f"✅ Cập nhật thành công!")
-            self.log_to_gui(f"   👤 Họ tên: {my_zalo_name}")
-            self.log_to_gui(f"   📅 Phiên đăng nhập: {last_login}")
-            self.log_to_gui(f"   🔄 Kiểm tra lúc: {current_time}")
+            self.log_to_gui(f"Cập nhật thành công!")
+            self.log_to_gui(f"   Họ tên: {my_zalo_name}")
+            self.log_to_gui(f"   Phiên đăng nhập: {last_login}")
+            self.log_to_gui(f"   [DANG XU LY] Kiểm tra lúc: {current_time}")
 
             # Reload danh sách tài khoản để cập nhật tên Zalo
             self.load_account_list()
@@ -1632,7 +1703,7 @@ Trân trọng!"""
                 pass
 
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi kiểm tra: {str(e)}")
+            self.log_to_gui(f"Lỗi khi kiểm tra: {str(e)}")
     
     def clear_zalo_session(self):
         """Xóa session Zalo đã lưu"""
@@ -1656,7 +1727,7 @@ Trân trọng!"""
             if result:
                 session_manager = self.account_manager.get_session_manager(self.current_account_id)
                 if session_manager.delete_session():
-                    self.log_to_gui("✅ Đã xóa phiên đăng nhập Zalo")
+                    self.log_to_gui("Đã xóa phiên đăng nhập Zalo")
 
                     # Cập nhật trạng thái tài khoản
                     self.account_manager.update_account(
@@ -1674,7 +1745,7 @@ Trân trọng!"""
                         parent=self
                     )
                 else:
-                    self.log_to_gui("❌ Không thể xóa phiên đăng nhập")
+                    self.log_to_gui("Không thể xóa phiên đăng nhập")
                     messagebox.showerror(
                         "Lỗi",
                         "Không thể xóa phiên đăng nhập!",
@@ -1682,10 +1753,10 @@ Trân trọng!"""
                     )
             
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi xóa session: {str(e)}")
+            self.log_to_gui(f"Lỗi khi xóa session: {str(e)}")
     
     def _run_zalo_login(self):
-        """Logic đăng nhập Zalo với Session Management"""
+        """Logic đăng nhập Zalo với Session Management và Headless Mode"""
         playwright_instance = None
         context = None
 
@@ -1694,7 +1765,7 @@ Trân trọng!"""
 
             # Kiểm tra đã chọn tài khoản chưa
             if not self.current_account_id:
-                self.log_to_gui("❌ Vui lòng chọn tài khoản trước!")
+                self.log_to_gui("Vui lòng chọn tài khoản trước!")
                 messagebox.showwarning(
                     "Cảnh báo",
                     "Vui lòng chọn tài khoản Zalo trước khi mở Zalo!",
@@ -1702,31 +1773,47 @@ Trân trọng!"""
                 )
                 return
 
-            self.log_to_gui("⏳ Đang khởi tạo Zalo Session Manager...")
+            # Lấy headless mode từ checkbox trang chủ
+            headless = self.headless_mode_var.get()
+            
+            self.log_to_gui("[CHO] Đang khởi tạo Zalo Session Manager...")
+            if headless:
+                self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
+                self.log_to_gui("ℹ️ Lưu ý: Nếu cần quét QR, trình duyệt sẽ tự động hiện lên")
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
 
             # Kiểm tra session hiện có
             if session_manager.has_session():
-                self.log_to_gui("✓ Tìm thấy phiên đăng nhập đã lưu")
+                self.log_to_gui("Tìm thấy phiên đăng nhập đã lưu")
                 session_info = session_manager.get_session_info()
                 if session_info:
                     self.log_to_gui(f"  - Lần đăng nhập cuối: {session_info.get('last_login', 'N/A')}")
             else:
-                self.log_to_gui("ℹ️ Chưa có phiên đăng nhập, sẽ đăng nhập mới")
+                self.log_to_gui("[ℹ️] Chưa có phiên đăng nhập, sẽ đăng nhập mới")
+                if headless:
+                    self.log_to_gui("[ℹ️] Trình duyệt sẽ hiện lên để bạn quét QR code")
 
             self.log_to_gui("📱 Đang mở Zalo...")
 
-            # Đăng nhập với session persistence
-            success, playwright_instance, context, page = session_manager.login_with_session(max_wait_time=300)
+            # Đăng nhập với session persistence và headless mode
+            success, playwright_instance, context, page = session_manager.login_with_session(
+                max_wait_time=300,
+                headless=headless
+            )
 
             if success:
                 self.log_to_gui("✅ Đăng nhập Zalo thành công!")
-                self.log_to_gui("💾 Phiên đăng nhập đã được lưu tự động")
-                self.log_to_gui("ℹ️ Trình duyệt sẽ vẫn mở để bạn sử dụng Zalo")
-                self.log_to_gui("💡 Nhấn nút 'Kiểm tra & Cập nhật' để cập nhật thông tin tài khoản")
-                self.log_to_gui("⚠️ Đóng cửa sổ trình duyệt khi bạn hoàn tất công việc")
+                self.log_to_gui("Phiên đăng nhập đã được lưu tự động")
+                
+                if headless:
+                    self.log_to_gui("ℹ️ Trình duyệt đang chạy ở chế độ ngầm")
+                else:
+                    self.log_to_gui("Trình duyệt sẽ vẫn mở để bạn sử dụng Zalo")
+                
+                self.log_to_gui("Nhấn nút 'Kiểm tra & Cập nhật' để cập nhật thông tin tài khoản")
+                self.log_to_gui("Đóng cửa sổ trình duyệt khi bạn hoàn tất công việc")
 
                 # Giữ browser mở - chờ người dùng đóng
                 # Context sẽ tự động lưu khi đóng
@@ -1739,20 +1826,20 @@ Trân trọng!"""
                 except:
                     pass
 
-                self.log_to_gui("ℹ️ Đã đóng trình duyệt Zalo")
+                self.log_to_gui("[ℹ️] Đã đóng trình duyệt Zalo")
 
             else:
                 self.log_to_gui("❌ Đăng nhập Zalo thất bại hoặc hết thời gian chờ")
 
         except ImportError as e:
             if "playwright" in str(e):
-                self.log_to_gui("❌ Lỗi: Chưa cài đặt Playwright!")
-                self.log_to_gui("💡 Vui lòng chạy: pip install playwright")
-                self.log_to_gui("💡 Sau đó chạy: playwright install chromium")
+                self.log_to_gui("Lỗi: Chưa cài đặt Playwright!")
+                self.log_to_gui("Vui lòng chạy: pip install playwright")
+                self.log_to_gui("Sau đó chạy: playwright install chromium")
             else:
-                self.log_to_gui(f"❌ Lỗi import: {str(e)}")
+                self.log_to_gui(f"Lỗi import: {str(e)}")
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi mở Zalo: {str(e)}")
+            self.log_to_gui(f"Lỗi khi mở Zalo: {str(e)}")
         finally:
             # Cleanup khi kết thúc
             try:
@@ -1762,12 +1849,6 @@ Trân trọng!"""
                     playwright_instance.stop()
             except:
                 pass
-
-        
-    def export_to_sheet_window(self):
-        """Mở cửa sổ mới để xuất sang Google Sheets (sẽ code logic sau)"""
-        self.log_to_gui("🟢 Chức năng 'Xuất sang Sheet' đang được phát triển...")
-        # TODO: Tạo TopLevel window cho Google Sheets export
 
     # === CÁC HÀM XỬ LÝ CHO TAB KIỂM TRA HỢP ĐỒNG ===
 
@@ -1782,7 +1863,7 @@ Trân trọng!"""
             if not file_path:
                 return
 
-            self.log_to_gui(f"📂 Đang đọc file: {file_path}")
+            self.log_to_gui(f"[📄] Đang đọc file: {file_path}")
 
             # Đọc file Excel
             import openpyxl
@@ -1896,19 +1977,22 @@ Trân trọng!"""
             # Cập nhật UI
             self.contract_excel_path = file_path
             file_name = file_path.split("/")[-1].split("\\")[-1]
-            self.contract_file_label.configure(text=f"📄 {file_name}", text_color="#28A745")
+            self.contract_file_label.configure(text=f"[TAI LIEU] {file_name}", text_color="#28A745")
             self.contract_count_label.configure(text=f"Số lượng: {len(self.contract_data)}", text_color="#28A745")
 
-            self.log_to_gui(f"✅ Đã tải {len(self.contract_data)} hợp đồng từ file Excel")
+            self.log_to_gui(f"Đã tải {len(self.contract_data)} hợp đồng từ file Excel")
 
         except Exception as e:
             messagebox.showerror("Lỗi", f"Không thể đọc file Excel:\n{str(e)}", parent=self)
-            self.log_to_gui(f"❌ Lỗi khi đọc file: {str(e)}")
+            self.log_to_gui(f"Lỗi khi đọc file: {str(e)}")
 
     def check_contracts(self):
         """Kiểm tra hợp đồng - ưu tiên nhập thủ công, nếu không có thì dùng file"""
         contract_number = self.contract_number_entry.get().strip()
         cccd = self.cccd_entry.get().strip()
+        
+        # Lấy giá trị headless trước khi tạo thread
+        headless = self.headless_mode_var.get()
 
         # Trường hợp 1: Có nhập thủ công
         if contract_number or cccd:
@@ -1921,7 +2005,7 @@ Trân trọng!"""
             import threading
             thread = threading.Thread(
                 target=self._run_check_single_contract,
-                args=(contract_number, cccd),
+                args=(contract_number, cccd, headless),
                 daemon=True
             )
             thread.start()
@@ -1935,6 +2019,7 @@ Trân trọng!"""
             import threading
             thread = threading.Thread(
                 target=self._run_check_contracts_from_file,
+                args=(headless,),
                 daemon=True
             )
             thread.start()
@@ -1946,7 +2031,7 @@ Trân trọng!"""
                 parent=self
             )
 
-    def _run_check_single_contract(self, contract_number, cccd):
+    def _run_check_single_contract(self, contract_number, cccd, headless):
         """Thread worker để kiểm tra 1 hợp đồng"""
         try:
             from playwright.sync_api import sync_playwright
@@ -1956,29 +2041,44 @@ Trân trọng!"""
             print("\n" + "="*80)
             print("KIỂM TRA HỢP ĐỒNG ĐƠN LẺ")
             print("="*80)
-            self.log_to_gui("⏳ Đang khởi tạo trình duyệt...")
+            
+            # Hiển thị chế độ chạy
+            mode_text = "chạy ngầm" if headless else "hiển thị trình duyệt"
+            self.log_to_gui(f"[CHO] Đang khởi tạo trình duyệt ({mode_text})...")
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
+                # Launch với các tham số tối ưu
+                launch_args = {
+                    'headless': headless,
+                    'args': [
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-web-security',
+                        '--disable-features=IsolateOrigins,site-per-process'
+                    ]
+                }
+                browser = p.chromium.launch(**launch_args)
                 context = browser.new_context()
                 page = context.new_page()
 
                 print("[INIT] Đang mở trang tra cứu...")
-                self.log_to_gui("🌐 Đang truy cập trang tra cứu...")
+                self.log_to_gui("[WEB] Đang truy cập trang tra cứu...")
                 page.goto("https://www.hdsaison.com.vn/vn/khach-hang/tra-cuu-khoan-vay.html")
                 page.wait_for_load_state("networkidle")
 
                 # Đóng popup nếu có
                 self._close_popup_if_exists(page)
 
-                print("[INIT] ✓ Trang đã sẵn sàng")
-                self.log_to_gui("✅ Đã mở trang tra cứu")
+                print("[INIT] Trang đã sẵn sàng")
+                self.log_to_gui("Đã mở trang tra cứu")
                 time.sleep(random.uniform(1.0, 1.5))
 
                 # Điền số hợp đồng (nếu có)
                 if contract_number:
                     print(f"[INPUT] Nhập số hợp đồng: {contract_number}")
-                    self.log_to_gui(f"📝 Nhập số hợp đồng: {contract_number}")
+                    self.log_to_gui(f"[✍️] Nhập số hợp đồng: {contract_number}")
 
                     self._close_popup_if_exists(page)
                     contract_input = page.wait_for_selector('input#contract_code', timeout=10000)
@@ -1991,7 +2091,7 @@ Trân trọng!"""
                 # Điền số CCCD (nếu có)
                 if cccd:
                     print(f"[INPUT] Nhập số CCCD: {cccd}")
-                    self.log_to_gui(f"📝 Nhập số CCCD: {cccd}")
+                    self.log_to_gui(f"[✍️] Nhập số CCCD: {cccd}")
 
                     self._close_popup_if_exists(page)
                     cccd_input = page.wait_for_selector('input#cmnd', timeout=10000)
@@ -2011,7 +2111,7 @@ Trân trọng!"""
                 search_button.click()
 
                 print("[SEARCH] Đang chờ kết quả...")
-                self.log_to_gui("⏳ Đang chờ kết quả...")
+                self.log_to_gui("[CHO] Đang chờ kết quả...")
                 time.sleep(3)
 
                 # Đóng popup sau khi tìm kiếm
@@ -2021,8 +2121,8 @@ Trân trọng!"""
                 try:
                     print("[RESULT] Kiểm tra kết quả...")
                     info_table = page.wait_for_selector('div.boxTableBd', timeout=5000)
-                    print("[RESULT] ✓ Tìm thấy bảng thông tin")
-                    self.log_to_gui("✅ Tìm thấy thông tin hợp đồng")
+                    print("[RESULT] Tìm thấy bảng thông tin")
+                    self.log_to_gui("Tìm thấy thông tin hợp đồng")
 
                     # Lấy thông tin từ bảng
                     name_element = page.query_selector('div.trBody:has-text("Họ Tên khách hàng") div.td')
@@ -2035,8 +2135,8 @@ Trân trọng!"""
                         print(f"[RESULT] Họ tên: {result_name}")
                         print(f"[RESULT] Số hợp đồng: {result_contract}")
 
-                        self.log_to_gui(f"📋 Họ tên: {result_name}")
-                        self.log_to_gui(f"📋 Số hợp đồng: {result_contract}")
+                        self.log_to_gui(f"[DANH SACH] Họ tên: {result_name}")
+                        self.log_to_gui(f"[DANH SACH] Số hợp đồng: {result_contract}")
 
                         # Đóng popup trước khi nhấn nút
                         self._close_popup_if_exists(page)
@@ -2056,7 +2156,7 @@ Trân trọng!"""
                         try:
                             with page.expect_navigation(timeout=10000):
                                 history_button.click()
-                            print(f"[HISTORY] ✓ Đã chuyển trang")
+                            print(f"[HISTORY] Đã chuyển trang")
                         except:
                             # Nếu không có navigation, có thể mở tab mới
                             print(f"[HISTORY] Không có navigation, thử cách khác...")
@@ -2075,7 +2175,7 @@ Trân trọng!"""
                         total_amount = 0
 
                         print(f"[HISTORY] Số lần đóng tiền: {total_payments}")
-                        self.log_to_gui(f"💰 Số lần đóng tiền: {total_payments}")
+                        self.log_to_gui(f"[TIEN] Số lần đóng tiền: {total_payments}")
 
                         for row_idx, row in enumerate(payment_rows, 1):
                             amount_element = row.query_selector('span.number_vnd')
@@ -2086,21 +2186,21 @@ Trân trọng!"""
                                     total_amount += amount
                                     print(f"[HISTORY]   Lần {row_idx}: {amount:,.0f} VNĐ")
                                 except Exception as e:
-                                    print(f"[HISTORY] ✗ Lỗi đọc số tiền lần {row_idx}: {e}")
+                                    print(f"[HISTORY] [X] Lỗi đọc số tiền lần {row_idx}: {e}")
 
                         print(f"[HISTORY] Tổng tiền đã đóng: {total_amount:,.0f} VNĐ")
-                        self.log_to_gui(f"💰 Tổng số tiền đã đóng: {total_amount:,.0f} VNĐ")
-                        self.log_to_gui("✅ Đã hoàn thành tra cứu")
+                        self.log_to_gui(f"[TIEN] Tổng số tiền đã đóng: {total_amount:,.0f} VNĐ")
+                        self.log_to_gui("Đã hoàn thành tra cứu")
 
                     else:
-                        print("[RESULT] ✗ Không lấy được thông tin từ bảng")
-                        self.log_to_gui("⚠️ Không lấy được thông tin từ bảng")
+                        print("[RESULT] [X] Không lấy được thông tin từ bảng")
+                        self.log_to_gui("Không lấy được thông tin từ bảng")
 
                 except Exception as e:
-                    print(f"[ERROR] ✗ LỖI: {str(e)}")
+                    print(f"[ERROR] [X] LỖI: {str(e)}")
                     import traceback
                     traceback.print_exc()
-                    self.log_to_gui(f"❌ Không tìm thấy thông tin hợp đồng hoặc lỗi: {str(e)}")
+                    self.log_to_gui(f"Không tìm thấy thông tin hợp đồng hoặc lỗi: {str(e)}")
 
                 # Giữ trình duyệt mở để xem
                 print("[INFO] Giữ trình duyệt mở 5 phút...")
@@ -2111,10 +2211,10 @@ Trân trọng!"""
                 browser.close()
 
         except Exception as e:
-            print(f"[ERROR] ✗ LỖI NGHIÊM TRỌNG: {str(e)}")
+            print(f"[ERROR] [X] LỖI NGHIÊM TRỌNG: {str(e)}")
             import traceback
             traceback.print_exc()
-            self.log_to_gui(f"❌ Lỗi: {str(e)}")
+            self.log_to_gui(f"Lỗi: {str(e)}")
 
     def _close_popup_if_exists(self, page):
         """Đóng popup tư vấn nếu xuất hiện"""
@@ -2125,7 +2225,7 @@ Trân trọng!"""
                 close_button = page.query_selector('button#close-pop-support')
                 if close_button:
                     close_button.click()
-                    print("[POPUP] ✓ Đã đóng popup")
+                    print("[POPUP] Đã đóng popup")
                     import time
                     time.sleep(0.5)
                     return True
@@ -2133,7 +2233,7 @@ Trân trọng!"""
             pass
         return False
 
-    def _run_check_contracts_from_file(self):
+    def _run_check_contracts_from_file(self, headless):
         """Thread worker để kiểm tra nhiều hợp đồng từ file"""
         try:
             from playwright.sync_api import sync_playwright
@@ -2143,27 +2243,42 @@ Trân trọng!"""
             print("\n" + "="*80)
             print("BẮT ĐẦU KIỂM TRA HỢP ĐỒNG HÀNG LOẠT")
             print("="*80)
-            self.log_to_gui("⏳ Đang khởi tạo trình duyệt...")
+            
+            # Hiển thị chế độ chạy
+            mode_text = "chạy ngầm" if headless else "hiển thị trình duyệt"
+            self.log_to_gui(f"[CHO] Đang khởi tạo trình duyệt ({mode_text})...")
 
             # Danh sách lưu kết quả để ghi vào Excel
             results = []
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
+                # Launch với các tham số tối ưu
+                launch_args = {
+                    'headless': headless,
+                    'args': [
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-web-security',
+                        '--disable-features=IsolateOrigins,site-per-process'
+                    ]
+                }
+                browser = p.chromium.launch(**launch_args)
                 context = browser.new_context()
                 page = context.new_page()
 
                 print("\n[INIT] Đang mở trang tra cứu...")
-                self.log_to_gui("🌐 Đang mở trang tra cứu...")
+                self.log_to_gui("[WEB] Đang mở trang tra cứu...")
 
                 page.goto("https://www.hdsaison.com.vn/vn/khach-hang/tra-cuu-khoan-vay.html")
                 page.wait_for_load_state("networkidle")
-                print("[INIT] ✓ Trang đã sẵn sàng")
+                print("[INIT] Trang đã sẵn sàng")
 
                 # Đóng popup nếu có
                 self._close_popup_if_exists(page)
 
-                self.log_to_gui("✅ Đã mở trang tra cứu")
+                self.log_to_gui("Đã mở trang tra cứu")
                 time.sleep(1)
 
                 # Kiểm tra từng hợp đồng
@@ -2194,7 +2309,7 @@ Trân trọng!"""
                     # Điền số hợp đồng
                     if item['contract_id']:
                         print(f"[INPUT] Nhập số hợp đồng: {item['contract_id']}")
-                        self.log_to_gui(f"  📝 Nhập số hợp đồng")
+                        self.log_to_gui(f"  [✍️] Nhập số hợp đồng")
 
                         # Đóng popup trước khi nhập
                         self._close_popup_if_exists(page)
@@ -2208,13 +2323,13 @@ Trân trọng!"""
 
                         contract_input.fill("")  # Clear
                         contract_input.fill(item['contract_id'])
-                        print(f"[INPUT] ✓ Đã nhập số hợp đồng")
+                        print(f"[INPUT] Đã nhập số hợp đồng")
                         time.sleep(random.uniform(0.3, 0.5))
 
                     # Điền số CCCD
                     if item['cccd']:
                         print(f"[INPUT] Nhập số CCCD: {item['cccd']}")
-                        self.log_to_gui(f"  📝 Nhập số CCCD")
+                        self.log_to_gui(f"  [✍️] Nhập số CCCD")
 
                         # Đóng popup trước khi nhập
                         self._close_popup_if_exists(page)
@@ -2228,7 +2343,7 @@ Trân trọng!"""
 
                         cccd_input.fill("")  # Clear
                         cccd_input.fill(item['cccd'])
-                        print(f"[INPUT] ✓ Đã nhập số CCCD")
+                        print(f"[INPUT] Đã nhập số CCCD")
                         time.sleep(random.uniform(0.3, 0.5))
 
                     # Đóng popup trước khi nhấn tìm kiếm
@@ -2241,7 +2356,7 @@ Trân trọng!"""
                     search_button.click()
 
                     print(f"[SEARCH] Đang chờ kết quả...")
-                    self.log_to_gui(f"  ⏳ Chờ kết quả...")
+                    self.log_to_gui(f"  [CHO] Chờ kết quả...")
                     time.sleep(3)
 
                     # Đóng popup sau khi tìm kiếm
@@ -2255,11 +2370,11 @@ Trân trọng!"""
                         print(f"[RESULT] Kiểm tra kết quả...")
                         try:
                             info_table = page.wait_for_selector('div.boxTableBd', timeout=5000)
-                            print(f"[RESULT] ✓ Tìm thấy bảng thông tin")
-                            self.log_to_gui(f"  ✅ Tìm thấy thông tin hợp đồng")
+                            print(f"[RESULT] Tìm thấy bảng thông tin")
+                            self.log_to_gui(f"  Tìm thấy thông tin hợp đồng")
                         except:
-                            print(f"[RESULT] ✗ Không tìm thấy thông tin hợp đồng")
-                            self.log_to_gui(f"  ⚠️ Không tìm thấy thông tin hợp đồng")
+                            print(f"[RESULT] [X] Không tìm thấy thông tin hợp đồng")
+                            self.log_to_gui(f"  Không tìm thấy thông tin hợp đồng")
 
                             # Lưu kết quả lỗi
                             results.append({
@@ -2279,8 +2394,8 @@ Trân trọng!"""
                             print(f"[RESULT] Họ tên (Web): {result_name}")
                             print(f"[RESULT] Số HĐ (Web): {result_contract}")
 
-                            self.log_to_gui(f"  📋 Họ tên (Web): {result_name}")
-                            self.log_to_gui(f"  📋 Số HĐ (Web): {result_contract}")
+                            self.log_to_gui(f"  [DANH SACH] Họ tên (Web): {result_name}")
+                            self.log_to_gui(f"  [DANH SACH] Số HĐ (Web): {result_contract}")
 
                             # So sánh tên và số hợp đồng
                             name_match = result_name.upper() == item.get('name', '').upper()
@@ -2291,8 +2406,8 @@ Trân trọng!"""
                             print(f"[COMPARE]   - Số HĐ khớp: {contract_match}")
 
                             if name_match and contract_match:
-                                print(f"[COMPARE] ✓ Thông tin khớp với Excel")
-                                self.log_to_gui(f"  ✅ Thông tin khớp với Excel")
+                                print(f"[COMPARE] Thông tin khớp với Excel")
+                                self.log_to_gui(f"  Thông tin khớp với Excel")
 
                                 # Đóng popup trước khi nhấn nút
                                 self._close_popup_if_exists(page)
@@ -2312,7 +2427,7 @@ Trân trọng!"""
                                 try:
                                     with page.expect_navigation(timeout=10000):
                                         history_button.click()
-                                    print(f"[HISTORY] ✓ Đã chuyển trang")
+                                    print(f"[HISTORY] Đã chuyển trang")
                                 except:
                                     # Nếu không có navigation, có thể mở tab mới
                                     print(f"[HISTORY] Không có navigation, thử cách khác...")
@@ -2327,11 +2442,11 @@ Trân trọng!"""
                                 # Kiểm tra xem page còn hoạt động không
                                 try:
                                     if page.is_closed():
-                                        print(f"[ERROR] ✗ Page đã bị đóng!")
-                                        self.log_to_gui(f"  ❌ Trang đã bị đóng")
+                                        print(f"[ERROR] [X] Page đã bị đóng!")
+                                        self.log_to_gui(f"  Trang đã bị đóng")
                                         continue
                                 except:
-                                    print(f"[ERROR] ✗ Không thể kiểm tra trạng thái page")
+                                    print(f"[ERROR] [X] Không thể kiểm tra trạng thái page")
                                     continue
 
                                 # Đếm số lần đóng tiền và tổng tiền
@@ -2343,7 +2458,7 @@ Trân trọng!"""
                                     total_amount = 0
 
                                     print(f"[HISTORY] Số lần đóng tiền: {total_payments}")
-                                    self.log_to_gui(f"  💰 Số lần đóng: {total_payments}")
+                                    self.log_to_gui(f"  [TIEN] Số lần đóng: {total_payments}")
 
                                     for row_idx, row in enumerate(payment_rows, 1):
                                         amount_element = row.query_selector('span.number_vnd')
@@ -2354,13 +2469,13 @@ Trân trọng!"""
                                                 total_amount += amount
                                                 print(f"[HISTORY]   Lần {row_idx}: {amount:,.0f} VNĐ")
                                             except Exception as e:
-                                                print(f"[HISTORY] ✗ Lỗi đọc số tiền lần {row_idx}: {e}")
+                                                print(f"[HISTORY] [X] Lỗi đọc số tiền lần {row_idx}: {e}")
 
                                     print(f"[HISTORY] Tổng tiền đã đóng: {total_amount:,.0f} VNĐ")
-                                    self.log_to_gui(f"  💰 Tổng đã đóng: {total_amount:,.0f} VNĐ")
+                                    self.log_to_gui(f"  [TIEN] Tổng đã đóng: {total_amount:,.0f} VNĐ")
                                 except Exception as e:
-                                    print(f"[HISTORY] ✗ Lỗi khi đọc bảng thanh toán: {e}")
-                                    self.log_to_gui(f"  ❌ Lỗi đọc bảng thanh toán")
+                                    print(f"[HISTORY] [X] Lỗi khi đọc bảng thanh toán: {e}")
+                                    self.log_to_gui(f"  Lỗi đọc bảng thanh toán")
                                     import traceback
                                     traceback.print_exc()
                                     continue
@@ -2376,17 +2491,17 @@ Trân trọng!"""
                                 if loan_amount > 0:
                                     if total_amount >= loan_amount:
                                         payment_status = "Đã đóng đầy đủ"
-                                        print(f"[COMPARE] ✓ Khách hàng đã đóng tiền đầy đủ")
-                                        self.log_to_gui(f"  ✅ Đã đóng tiền đầy đủ")
+                                        print(f"[COMPARE] Khách hàng đã đóng tiền đầy đủ")
+                                        self.log_to_gui(f"  Đã đóng tiền đầy đủ")
                                     else:
                                         remaining = loan_amount - total_amount
                                         payment_status = f"Chưa thanh toán {remaining:,.0f} VNĐ"
                                         print(f"[COMPARE] ⚠ Chưa thanh toán: {remaining:,.0f} VNĐ")
-                                        self.log_to_gui(f"  ⚠️ Chưa thanh toán: {remaining:,.0f} VNĐ")
+                                        self.log_to_gui(f"  Chưa thanh toán: {remaining:,.0f} VNĐ")
                                 else:
                                     payment_status = "Không có thông tin số tiền vay"
                                     print(f"[COMPARE] ⚠ Không có thông tin số tiền vay trong Excel")
-                                    self.log_to_gui(f"  ⚠️ Không có thông tin số tiền vay")
+                                    self.log_to_gui(f"  Không có thông tin số tiền vay")
 
                                 # Lưu kết quả
                                 results.append({
@@ -2403,11 +2518,11 @@ Trân trọng!"""
 
                                 # Đóng popup sau khi quay lại
                                 self._close_popup_if_exists(page)
-                                print(f"[NAVIGATE] ✓ Đã sẵn sàng cho tra cứu tiếp theo")
+                                print(f"[NAVIGATE] Đã sẵn sàng cho tra cứu tiếp theo")
 
                             else:
-                                print(f"[COMPARE] ✗ Thông tin KHÔNG khớp với Excel")
-                                self.log_to_gui(f"  ⚠️ Thông tin KHÔNG khớp")
+                                print(f"[COMPARE] [X] Thông tin KHÔNG khớp với Excel")
+                                self.log_to_gui(f"  Thông tin KHÔNG khớp")
                                 if not name_match:
                                     print(f"[COMPARE]   - Tên không khớp: Excel='{item.get('name', '')}' vs Web='{result_name}'")
                                     self.log_to_gui(f"    - Tên không khớp")
@@ -2421,8 +2536,8 @@ Trân trọng!"""
                                     'status': 'Thông tin không khớp'
                                 })
                         else:
-                            print(f"[RESULT] ✗ Không lấy được thông tin từ bảng")
-                            self.log_to_gui(f"  ⚠️ Không lấy được thông tin từ bảng")
+                            print(f"[RESULT] [X] Không lấy được thông tin từ bảng")
+                            self.log_to_gui(f"  Không lấy được thông tin từ bảng")
 
                             # Lưu kết quả lỗi
                             results.append({
@@ -2431,10 +2546,10 @@ Trân trọng!"""
                             })
 
                     except Exception as e:
-                        print(f"[ERROR] ✗ LỖI: {str(e)}")
+                        print(f"[ERROR] [X] LỖI: {str(e)}")
                         import traceback
                         traceback.print_exc()
-                        self.log_to_gui(f"  ❌ Lỗi - {str(e)}")
+                        self.log_to_gui(f"  Lỗi - {str(e)}")
 
                         # Lưu kết quả lỗi
                         results.append({
@@ -2452,7 +2567,7 @@ Trân trọng!"""
                 print(f"{'='*80}\n")
 
                 self.log_to_gui(f"\n{'='*60}")
-                self.log_to_gui(f"✅ Đã hoàn thành tra cứu {total_contracts} hợp đồng")
+                self.log_to_gui(f"Đã hoàn thành tra cứu {total_contracts} hợp đồng")
 
                 # Đóng trình duyệt
                 print("[INFO] Đóng trình duyệt...")
@@ -2465,7 +2580,7 @@ Trân trọng!"""
                 print(f"\n{'='*80}")
                 print("GHI KẾT QUẢ VÀO FILE EXCEL")
                 print(f"{'='*80}")
-                self.log_to_gui("\n📝 Đang ghi kết quả vào Excel...")
+                self.log_to_gui("\n[✍️] Đang ghi kết quả vào Excel...")
 
                 try:
                     import openpyxl
@@ -2502,18 +2617,18 @@ Trân trọng!"""
 
                         # Lưu file
                         wb.save(self.contract_excel_path)
-                        print(f"[EXCEL] ✓ Đã lưu file: {self.contract_excel_path}")
-                        self.log_to_gui(f"✅ Đã ghi kết quả vào Excel")
-                        self.log_to_gui(f"📁 File: {self.contract_excel_path}")
+                        print(f"[EXCEL] Đã lưu file: {self.contract_excel_path}")
+                        self.log_to_gui(f"Đã ghi kết quả vào Excel")
+                        self.log_to_gui(f"File: {self.contract_excel_path}")
                     else:
-                        print(f"[EXCEL] ✗ Không tìm thấy cột 'ID Hợp đồng'")
-                        self.log_to_gui(f"⚠️ Không tìm thấy cột 'ID Hợp đồng'")
+                        print(f"[EXCEL] [X] Không tìm thấy cột 'ID Hợp đồng'")
+                        self.log_to_gui(f"Không tìm thấy cột 'ID Hợp đồng'")
 
                 except Exception as e:
-                    print(f"[EXCEL] ✗ Lỗi khi ghi Excel: {e}")
+                    print(f"[EXCEL] [X] Lỗi khi ghi Excel: {e}")
                     import traceback
                     traceback.print_exc()
-                    self.log_to_gui(f"❌ Lỗi khi ghi Excel: {str(e)}")
+                    self.log_to_gui(f"Lỗi khi ghi Excel: {str(e)}")
 
         except Exception as e:
             error_msg = f"LỖI NGHIÊM TRỌNG: {str(e)}"
@@ -2522,7 +2637,7 @@ Trân trọng!"""
             print(f"{'='*80}\n")
             import traceback
             traceback.print_exc()
-            self.log_to_gui(f"❌ Lỗi: {str(e)}")
+            self.log_to_gui(f"Lỗi: {str(e)}")
 
     # === CÁC HÀM XỬ LÝ CHO TAB ZALO ===
 
@@ -2537,7 +2652,7 @@ Trân trọng!"""
             if not file_path:
                 return
 
-            self.log_to_gui(f"📂 Đang đọc file: {file_path}")
+            self.log_to_gui(f"[📄] Đang đọc file: {file_path}")
 
             # Đọc file Excel
             import openpyxl
@@ -2644,7 +2759,7 @@ Trân trọng!"""
                 customer['is_processed'] = False
                 if note:
                     # Kiểm tra nếu đã kết bạn thành công, đã là bạn bè, hoặc đã gửi lời mời
-                    if '✅ Kết bạn thành công' in note or '✅ Đã là bạn bè' in note or '⚠️ Đã gửi lời mời trước đó' in note or '✅ Gửi tin nhắn thành công' in note:
+                    if 'Kết bạn thành công' in note or 'Đã là bạn bè' in note or 'Đã gửi lời mời trước đó' in note or 'Gửi tin nhắn thành công' in note:
                         customer['is_processed'] = True
                         processed_count += 1
 
@@ -2658,7 +2773,7 @@ Trân trọng!"""
             self.zalo_excel_path = file_path
             filename = file_path.split('/')[-1].split('\\')[-1]
             self.zalo_file_label.configure(
-                text=f"✓ {filename}",
+                text=f"[OK] {filename}",
                 text_color="green"
             )
 
@@ -2666,23 +2781,23 @@ Trân trọng!"""
             unprocessed_count = len(self.zalo_customer_data) - processed_count
             status_text = f"Tổng: {len(self.zalo_customer_data)}"
             if processed_count > 0:
-                status_text += f" (✅ {processed_count} đã xử lý, 🔄 {unprocessed_count} chưa xử lý)"
+                status_text += f" ([OK] {processed_count} đã xử lý, [DANG XU LY] {unprocessed_count} chưa xử lý)"
 
             self.zalo_customer_count_label.configure(
                 text=status_text,
                 text_color="#28A745"
             )
 
-            self.log_to_gui(f"✅ Đã tải {len(self.zalo_customer_data)} khách hàng từ Excel")
+            self.log_to_gui(f"[OK] Đã tải {len(self.zalo_customer_data)} khách hàng từ Excel")
             if processed_count > 0:
-                self.log_to_gui(f"   📊 Trạng thái: {processed_count} đã xử lý, {unprocessed_count} chưa xử lý")
-            self.log_to_gui(f"   📋 Các cột được nhận diện: {', '.join(column_mapping.keys())}")
+                self.log_to_gui(f"   [DU LIEU] Trạng thái: {processed_count} đã xử lý, {unprocessed_count} chưa xử lý")
+            self.log_to_gui(f"   [DANH SACH] Các cột được nhận diện: {', '.join(column_mapping.keys())}")
 
         except ImportError:
-            self.log_to_gui("❌ Lỗi: Chưa cài đặt openpyxl. Chạy: pip install openpyxl")
+            self.log_to_gui("[LỖI] Lỗi: Chưa cài đặt openpyxl. Chạy: pip install openpyxl")
             messagebox.showerror("Lỗi", "Chưa cài đặt thư viện openpyxl!", parent=self)
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi đọc file Excel: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi đọc file Excel: {str(e)}")
             messagebox.showerror("Lỗi", f"Không thể đọc file Excel:\n{str(e)}", parent=self)
 
     def save_results_to_excel(self, results):
@@ -2740,7 +2855,7 @@ Trân trọng!"""
                     break
 
             if phone_col_idx is None:
-                self.log_to_gui("⚠️ Không tìm thấy cột số điện thoại trong Excel")
+                self.log_to_gui("[⚠️] Không tìm thấy cột số điện thoại trong Excel")
                 return
 
             # Tạo mapping từ phone -> result
@@ -2770,16 +2885,16 @@ Trân trọng!"""
 
                     # Tạo message ghi chú và chọn màu
                     if status == 'success':
-                        note = f"✅ Kết bạn thành công ({timestamp})"
+                        note = f"[OK] Kết bạn thành công ({timestamp})"
                         fill_color = green_fill
                     elif status == 'already_friend':
-                        note = f"✅ Đã là bạn bè ({timestamp})"
+                        note = f"[OK] Đã là bạn bè ({timestamp})"
                         fill_color = green_fill
                     elif status == 'already_sent':
-                        note = f"⚠️ Đã gửi lời mời trước đó ({timestamp})"
+                        note = f"[⚠️] Đã gửi lời mời trước đó ({timestamp})"
                         fill_color = yellow_fill
                     elif status == 'failed':
-                        note = f"❌ Kết bạn thất bại ({timestamp})"
+                        note = f"[LỖI] Kết bạn thất bại ({timestamp})"
                         fill_color = red_fill
                     else:
                         note = f"❓ Không xác định ({timestamp})"
@@ -2802,39 +2917,69 @@ Trân trọng!"""
             wb.save(self.zalo_excel_path)
             wb.close()
 
-            self.log_to_gui(f"   📝 Đã cập nhật {updated_count}/{len(results)} dòng trong Excel")
+            self.log_to_gui(f"   [✍️] Đã cập nhật {updated_count}/{len(results)} dòng trong Excel")
 
         except Exception as e:
             raise Exception(f"Lỗi khi lưu Excel: {str(e)}")
 
     def save_message_template(self):
-        """Lưu kịch bản tin nhắn vào file"""
+        """Lưu kịch bản tin nhắn vào file với tên riêng"""
         try:
+            # Hỏi tên kịch bản với custom dialog
+            dialog = InputDialog(
+                self,
+                "Lưu kịch bản",
+                "Nhập tên cho kịch bản:"
+            )
+            template_name = dialog.get_input()
+            
+            if not template_name:
+                return
+            
+            # Làm sạch tên file
+            template_name = template_name.strip()
+            if not template_name:
+                messagebox.showwarning("Cảnh báo", "Tên kịch bản không được để trống!", parent=self)
+                return
+            
             template = self.zalo_message_template.get("1.0", "end-1c")
 
-            # Lưu vào file JSON
-            template_file = os.path.join(self.app_data_dir, "message_template.json")
+            # Lưu vào file JSON với tên riêng
+            templates_dir = os.path.join(self.app_data_dir, "message_templates")
+            if not os.path.exists(templates_dir):
+                os.makedirs(templates_dir)
+            
+            template_file = os.path.join(templates_dir, f"{template_name}.json")
             with open(template_file, "w", encoding="utf-8") as f:
-                json.dump({"template": template}, f, ensure_ascii=False, indent=2)
+                json.dump({"name": template_name, "template": template}, f, ensure_ascii=False, indent=2)
 
-            self.log_to_gui("✅ Đã lưu kịch bản tin nhắn")
+            self.log_to_gui(f"[OK] Đã lưu kịch bản '{template_name}'")
             messagebox.showinfo(
                 "Thành công",
-                "Đã lưu kịch bản tin nhắn!",
+                f"Đã lưu kịch bản '{template_name}'!",
                 parent=self
             )
+            
+            # Refresh danh sách
+            self.refresh_template_list()
+            
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi lưu kịch bản: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi lưu kịch bản: {str(e)}")
             messagebox.showerror(
                 "Lỗi",
                 f"Không thể lưu kịch bản: {str(e)}",
                 parent=self
             )
 
-    def load_message_template(self):
-        """Load kịch bản tin nhắn từ file"""
+    def load_message_template(self, template_name=None):
+        """Load kịch bản tin nhắn từ file theo tên"""
         try:
-            template_file = os.path.join(self.app_data_dir, "message_template.json")
+            if not template_name:
+                return ""
+            
+            templates_dir = os.path.join(self.app_data_dir, "message_templates")
+            template_file = os.path.join(templates_dir, f"{template_name}.json")
+            
             if os.path.exists(template_file):
                 with open(template_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -2843,6 +2988,125 @@ Trân trọng!"""
         except Exception as e:
             print(f"Lỗi khi load kịch bản: {str(e)}")
             return ""
+    
+    def get_saved_template_names(self):
+        """Lấy danh sách tên các kịch bản đã lưu"""
+        try:
+            templates_dir = os.path.join(self.app_data_dir, "message_templates")
+            if not os.path.exists(templates_dir):
+                return []
+            
+            template_files = [f for f in os.listdir(templates_dir) if f.endswith('.json')]
+            template_names = [f[:-5] for f in template_files]  # Bỏ .json
+            return sorted(template_names)
+        except Exception as e:
+            print(f"Lỗi khi lấy danh sách kịch bản: {str(e)}")
+            return []
+    
+    def on_template_selected(self, selected_name):
+        """Callback khi chọn kịch bản từ dropdown"""
+        try:
+            if selected_name == "(Chưa có kịch bản)":
+                return
+            
+            template = self.load_message_template(selected_name)
+            if template:
+                # Xóa nội dung cũ và insert mới
+                self.zalo_message_template.delete("1.0", "end")
+                self.zalo_message_template.insert("1.0", template)
+                self.log_to_gui(f"[OK] Đã load kịch bản '{selected_name}'")
+            else:
+                messagebox.showwarning(
+                    "Cảnh báo",
+                    f"Không thể load kịch bản '{selected_name}'",
+                    parent=self
+                )
+        except Exception as e:
+            self.log_to_gui(f"[LỖI] Lỗi khi load kịch bản: {str(e)}")
+    
+    def refresh_template_list(self):
+        """Refresh danh sách kịch bản trong dropdown"""
+        try:
+            self.template_names = self.get_saved_template_names()
+            template_options = self.template_names if self.template_names else ["(Chưa có kịch bản)"]
+            
+            self.template_dropdown.configure(values=template_options)
+            if self.template_names:
+                self.template_dropdown.set(self.template_names[0])
+            else:
+                self.template_dropdown.set("(Chưa có kịch bản)")
+            
+            self.log_to_gui("[OK] Đã cập nhật danh sách kịch bản")
+        except Exception as e:
+            self.log_to_gui(f"[LỖI] Lỗi khi refresh danh sách: {str(e)}")
+    
+    def delete_message_template(self):
+        """Xoá kịch bản tin nhắn đã lưu"""
+        try:
+            # Lấy kịch bản đang chọn
+            selected_template = self.template_dropdown.get()
+            
+            if not selected_template or selected_template == "(Chưa có kịch bản)":
+                messagebox.showwarning("Cảnh báo", "Vui lòng chọn kịch bản cần xoá!", parent=self)
+                return
+            
+            # Xác nhận xoá
+            confirm = messagebox.askyesno(
+                "Xác nhận xoá",
+                f"Bạn có chắc muốn xoá kịch bản '{selected_template}'?\n\nHành động này không thể hoàn tác!",
+                parent=self,
+                icon='warning'
+            )
+            
+            if not confirm:
+                return
+            
+            # Xoá file
+            templates_dir = os.path.join(self.app_data_dir, "message_templates")
+            template_file = os.path.join(templates_dir, f"{selected_template}.json")
+            
+            if os.path.exists(template_file):
+                os.remove(template_file)
+                self.log_to_gui(f"[OK] Đã xoá kịch bản '{selected_template}'")
+                
+                # Refresh danh sách
+                self.refresh_template_list()
+                
+                # Load kịch bản mới hoặc default
+                if self.template_names:
+                    new_template = self.load_message_template(self.template_names[0])
+                    if new_template:
+                        self.zalo_message_template.delete("1.0", "end")
+                        self.zalo_message_template.insert("1.0", new_template)
+                else:
+                    # Nếu không còn kịch bản nào, load default
+                    self.zalo_message_template.delete("1.0", "end")
+                    self._insert_default_template()
+                
+                messagebox.showinfo("Thành công", f"Đã xoá kịch bản '{selected_template}'", parent=self)
+            else:
+                messagebox.showerror("Lỗi", f"Không tìm thấy file kịch bản '{selected_template}'", parent=self)
+                
+        except Exception as e:
+            self.log_to_gui(f"[LỖI] Lỗi khi xoá kịch bản: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể xoá kịch bản: {str(e)}", parent=self)
+    
+    def _insert_default_template(self):
+        """Insert template mặc định vào textbox"""
+        default_template = """{name} ơi, HD SAISON có ưu đãi 35 triệu cho khách hàng thân thiết!
+Chào {gender} {name},
+Chúc mừng {gender} đã thanh toán hoàn tất khoản vay số {contract_id}! HD SAISON rất trân trọng uy tín và sự đồng hành của Quý khách.
+Để tri ân, HD SAISON xin gửi tặng {gender} {name} ưu đãi vay tiền mặt ĐỘC QUYỀN dành cho khách hàng cũ:
+Khoản vay lên đến 35 TRIỆU ĐỒNG.
+Thời hạn vay lên đến 36 tháng.
+Lãi suất chỉ từ 1.67%/tháng.
+Giải ngân NHANH CHÓNG trong 1 giờ, không cần thế chấp.
+Miễn phí hoàn toàn với khách hàng thân thiết.
+
+{gender} {name} vui lòng nhắn tin lại cho tôi để được hỗ trợ hoặc gọi Hotline: 1900 6249 (máy lẻ 0) để được tư vấn chi tiết.
+
+Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
+        self.zalo_message_template.insert("1.0", default_template)
 
     def save_message_results_to_excel(self, details):
         """
@@ -2899,7 +3163,7 @@ Trân trọng!"""
                     break
 
             if phone_col_idx is None:
-                self.log_to_gui("⚠️ Không tìm thấy cột số điện thoại trong Excel")
+                self.log_to_gui("[⚠️] Không tìm thấy cột số điện thoại trong Excel")
                 return
 
             # Tạo mapping từ phone -> detail
@@ -2929,22 +3193,22 @@ Trân trọng!"""
 
                     # Tạo message ghi chú và chọn màu
                     if status == 'success':
-                        note = f"✅ Gửi tin nhắn thành công ({timestamp})"
+                        note = f"[OK] Gửi tin nhắn thành công ({timestamp})"
                         fill_color = green_fill
                     elif status == 'not_registered':
-                        note = f"⚠️ Số chưa đăng ký hoặc không cho phép tìm kiếm ({timestamp})"
+                        note = f"[⚠️] Số chưa đăng ký hoặc không cho phép tìm kiếm ({timestamp})"
                         fill_color = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # Màu vàng nhạt
                     elif status == 'not_found':
-                        note = f"⚠️ Không tìm thấy kết quả ({timestamp})"
+                        note = f"[⚠️] Không tìm thấy kết quả ({timestamp})"
                         fill_color = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # Màu vàng nhạt
                     elif status == 'failed':
-                        note = f"❌ Gửi tin nhắn thất bại ({timestamp})"
+                        note = f"[LỖI] Gửi tin nhắn thất bại ({timestamp})"
                         fill_color = red_fill
                     elif status == 'no_phone':
-                        note = f"⚠️ Không có số điện thoại ({timestamp})"
+                        note = f"[⚠️] Không có số điện thoại ({timestamp})"
                         fill_color = gray_fill
                     elif status == 'error':
-                        note = f"❌ Lỗi khi gửi tin nhắn ({timestamp})"
+                        note = f"[LỖI] Lỗi khi gửi tin nhắn ({timestamp})"
                         fill_color = red_fill
                     else:
                         note = f"❓ Không xác định ({timestamp})"
@@ -2960,7 +3224,7 @@ Trân trọng!"""
                         if friend_status == 'friend':
                             friend_status_text = "👥 Bạn bè"
                         elif friend_status == 'stranger':
-                            friend_status_text = "👤 Người lạ"
+                            friend_status_text = "[NGUOI DUNG] Người lạ"
                         else:
                             friend_status_text = "❓ Không xác định"
 
@@ -2974,7 +3238,7 @@ Trân trọng!"""
             wb.save(self.zalo_excel_path)
             wb.close()
 
-            self.log_to_gui(f"   📝 Đã cập nhật {updated_count}/{len(details)} dòng trong Excel")
+            self.log_to_gui(f"   [✍️] Đã cập nhật {updated_count}/{len(details)} dòng trong Excel")
 
         except Exception as e:
             raise Exception(f"Lỗi khi lưu Excel: {str(e)}")
@@ -3042,9 +3306,9 @@ Trân trọng!"""
             template_file = os.path.join(self.app_data_dir, "message_template.json")
             with open(template_file, "w", encoding="utf-8") as f:
                 json.dump({"template": template}, f, ensure_ascii=False, indent=2)
-            self.log_to_gui("💾 Đã tự động lưu kịch bản tin nhắn")
+            self.log_to_gui("[💾] Đã tự động lưu kịch bản tin nhắn")
         except Exception as e:
-            self.log_to_gui(f"⚠️ Không thể tự động lưu kịch bản: {str(e)}")
+            self.log_to_gui(f"[⚠️] Không thể tự động lưu kịch bản: {str(e)}")
 
         # Lưu danh sách cần xử lý vào biến tạm
         self.current_customers_to_process = customers_to_process
@@ -3150,12 +3414,12 @@ Trân trọng!"""
             # Cập nhật cả 2 nút
             self.zalo_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
             self.message_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
-            self.log_to_gui("⏸️ Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
+            self.log_to_gui("[TAM DUNG] Đã tạm dừng - Click 'Tiếp tục' để chạy tiếp")
         else:
             # Cập nhật cả 2 nút
             self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
             self.message_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
-            self.log_to_gui("▶️ Tiếp tục chạy...")
+            self.log_to_gui("[TIEP TUC] Tiếp tục chạy...")
 
 
 
@@ -3168,7 +3432,7 @@ Trân trọng!"""
 
             # Kiểm tra đã chọn tài khoản chưa
             if not self.current_account_id:
-                self.log_to_gui("❌ Vui lòng chọn tài khoản trước!")
+                self.log_to_gui("[LỖI] Vui lòng chọn tài khoản trước!")
                 messagebox.showerror(
                     "Lỗi",
                     "Vui lòng chọn tài khoản Zalo trước khi gửi tin nhắn!",
@@ -3176,25 +3440,25 @@ Trân trọng!"""
                 )
                 return
 
-            self.log_to_gui("⏳ Đang khởi tạo Zalo...")
+            self.log_to_gui("[CHO] Đang khởi tạo Zalo...")
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
             success, p, context, page = session_manager.login_with_session(max_wait_time=60)
 
             if not success:
-                self.log_to_gui("❌ Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
+                self.log_to_gui("[LỖI] Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
                 if context:
                     context.close()
                 if p:
                     p.stop()
                 return
 
-            self.log_to_gui("✅ Đã đăng nhập Zalo")
+            self.log_to_gui("[OK] Đã đăng nhập Zalo")
 
             # Sử dụng danh sách đã lọc
             customers = getattr(self, 'current_customers_to_process', self.zalo_customer_data)
-            self.log_to_gui(f"📤 Bắt đầu gửi tin nhắn đến {len(customers)} khách hàng...")
+            self.log_to_gui(f"[TAI LEN] Bắt đầu gửi tin nhắn đến {len(customers)} khách hàng...")
 
             # Tạo automation instance
             automation = zalo_automation.ZaloAutomation(page)
@@ -3211,31 +3475,31 @@ Trân trọng!"""
 
             # Hiển thị kết quả
             self.log_to_gui("\n" + "="*50)
-            self.log_to_gui(f"✅ HOÀN TẤT GỬI TIN NHẮN HÀNG LOẠT")
+            self.log_to_gui(f"[OK] HOÀN TẤT GỬI TIN NHẮN HÀNG LOẠT")
             self.log_to_gui(f"   - Thành công: {result['success']}")
             self.log_to_gui(f"   - Thất bại: {result['failed']}")
             if result['errors']:
-                self.log_to_gui(f"\n❌ Các lỗi:")
+                self.log_to_gui(f"\n[LỖI] Các lỗi:")
                 for error in result['errors'][:10]:  # Hiển thị tối đa 10 lỗi
                     self.log_to_gui(f"   - {error}")
             self.log_to_gui("="*50)
 
             # Ghi kết quả vào file Excel
             if self.zalo_excel_path and result.get('details'):
-                self.log_to_gui("\n💾 Đang lưu kết quả vào file Excel...")
+                self.log_to_gui("\n[💾] Đang lưu kết quả vào file Excel...")
                 try:
                     self.save_message_results_to_excel(result['details'])
-                    self.log_to_gui("✅ Đã lưu kết quả vào file Excel")
+                    self.log_to_gui("[OK] Đã lưu kết quả vào file Excel")
                 except Exception as e:
-                    self.log_to_gui(f"⚠️ Không thể lưu kết quả vào Excel: {str(e)}")
+                    self.log_to_gui(f"[⚠️] Không thể lưu kết quả vào Excel: {str(e)}")
 
             # Disable nút điều khiển
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
 
             # Giữ trình duyệt mở
-            self.log_to_gui("\nℹ️ Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
-            self.log_to_gui("⚠️ Đóng cửa sổ trình duyệt khi hoàn tất")
+            self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
+            self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
 
             # Chờ người dùng đóng
             try:
@@ -3255,12 +3519,12 @@ Trân trọng!"""
                 pass
 
         except ImportError as e:
-            self.log_to_gui(f"❌ Lỗi import: {str(e)}")
-            self.log_to_gui("💡 Vui lòng cài đặt: pip install playwright")
+            self.log_to_gui(f"[LỖI] Lỗi import: {str(e)}")
+            self.log_to_gui("[📝] Vui lòng cài đặt: pip install playwright")
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi gửi tin nhắn: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi gửi tin nhắn: {str(e)}")
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
 
@@ -3273,7 +3537,7 @@ Trân trọng!"""
 
             # Kiểm tra đã chọn tài khoản chưa
             if not self.current_account_id:
-                self.log_to_gui("❌ Vui lòng chọn tài khoản trước!")
+                self.log_to_gui("[LỖI] Vui lòng chọn tài khoản trước!")
                 messagebox.showerror(
                     "Lỗi",
                     "Vui lòng chọn tài khoản Zalo trước khi kết bạn!",
@@ -3285,35 +3549,35 @@ Trân trọng!"""
             greeting_template = self.friend_greeting_textbox.get("1.0", "end-1c").strip()
             if not greeting_template:
                 greeting_template = "Xin chào, mình là {my_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
-                self.log_to_gui("⚠️ Lời chào trống, sử dụng lời chào mặc định")
+                self.log_to_gui("[⚠️] Lời chào trống, sử dụng lời chào mặc định")
 
-            self.log_to_gui("⏳ Đang khởi tạo Zalo...")
+            self.log_to_gui("[CHO] Đang khởi tạo Zalo...")
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
             success, p, context, page = session_manager.login_with_session(max_wait_time=60)
 
             if not success:
-                self.log_to_gui("❌ Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
+                self.log_to_gui("[LỖI] Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
                 if context:
                     context.close()
                 if p:
                     p.stop()
                 return
 
-            self.log_to_gui("✅ Đã đăng nhập Zalo")
+            self.log_to_gui("[OK] Đã đăng nhập Zalo")
 
             # Sử dụng danh sách đã lọc và lọc thêm khách hàng có số điện thoại
             customers = getattr(self, 'current_customers_to_process', self.zalo_customer_data)
             customers_with_phone = [c for c in customers if c.get('phone')]
-            self.log_to_gui(f"➕ Bắt đầu kết bạn với {len(customers_with_phone)} số điện thoại...")
+            self.log_to_gui(f"[THEM] Bắt đầu kết bạn với {len(customers_with_phone)} số điện thoại...")
 
             # Tạo automation instance
             automation = zalo_automation.ZaloAutomation(page)
 
             # Lấy tên Zalo của tài khoản đang đăng nhập (truyền session_manager để lưu tên)
             my_zalo_name = automation.get_my_zalo_name(session_manager)
-            self.log_to_gui(f"👤 Tài khoản Zalo: {my_zalo_name}")
+            self.log_to_gui(f"[NGUOI DUNG] Tài khoản Zalo: {my_zalo_name}")
 
             # Kết bạn từng người
             success_count = 0
@@ -3359,7 +3623,7 @@ Trân trọng!"""
                 )
 
                 self.log_to_gui(f"\n{'='*60}")
-                self.log_to_gui(f"➕ [{idx}/{len(customers_with_phone)}] Đang kết bạn: {name} ({phone})")
+                self.log_to_gui(f"[THEM] [{idx}/{len(customers_with_phone)}] Đang kết bạn: {name} ({phone})")
 
                 # Gọi hàm kết bạn (trả về tuple: success/status, display_name)
                 # Truyền formatted_greeting thay vì greeting_template
@@ -3369,7 +3633,7 @@ Trân trọng!"""
                 if result == "already_sent":
                     # Đã gửi lời mời trước đó
                     already_sent_count += 1
-                    result_msg = f"⚠️ [{idx}/{len(customers_with_phone)}] Đã gửi lời mời trước đó: {phone}"
+                    result_msg = f"[⚠️] [{idx}/{len(customers_with_phone)}] Đã gửi lời mời trước đó: {phone}"
                     if display_name:
                         result_msg += f" - Tên Zalo: {display_name}"
                     self.log_to_gui(result_msg)
@@ -3382,7 +3646,7 @@ Trân trọng!"""
                 elif result == "already_friend":
                     # Đã là bạn bè
                     already_friend_count += 1
-                    result_msg = f"✅ [{idx}/{len(customers_with_phone)}] Đã là bạn bè: {phone}"
+                    result_msg = f"[OK] [{idx}/{len(customers_with_phone)}] Đã là bạn bè: {phone}"
                     if display_name:
                         result_msg += f" - Tên Zalo: {display_name}"
                     self.log_to_gui(result_msg)
@@ -3395,7 +3659,7 @@ Trân trọng!"""
                 elif result:
                     # Thành công
                     success_count += 1
-                    result_msg = f"✅ [{idx}/{len(customers_with_phone)}] Thành công: {phone}"
+                    result_msg = f"[OK] [{idx}/{len(customers_with_phone)}] Thành công: {phone}"
                     if display_name:
                         result_msg += f" - Tên Zalo: {display_name}"
                     self.log_to_gui(result_msg)
@@ -3408,7 +3672,7 @@ Trân trọng!"""
                 else:
                     # Thất bại
                     failed_count += 1
-                    self.log_to_gui(f"❌ [{idx}/{len(customers_with_phone)}] Thất bại: {phone}")
+                    self.log_to_gui(f"[LỖI] [{idx}/{len(customers_with_phone)}] Thất bại: {phone}")
                     results.append({
                         'phone': phone,
                         'name': name,
@@ -3417,19 +3681,19 @@ Trân trọng!"""
                     })
 
                 # Đóng modal sau mỗi lần kết bạn (thành công hoặc thất bại)
-                self.log_to_gui("🔄 Đóng modal và chuẩn bị kết bạn tiếp...")
+                self.log_to_gui("[DANG XU LY] Đóng modal và chuẩn bị kết bạn tiếp...")
                 automation.close_modal_after_add_friend()
 
                 # Delay giữa các lần kết bạn (random 2.5-3.5s)
                 if idx < len(customers_with_phone):
                     import random
                     delay = random.uniform(2.5, 3.5)
-                    self.log_to_gui(f"⏳ Chờ {delay:.1f} giây trước khi kết bạn tiếp...")
+                    self.log_to_gui(f"[CHO] Chờ {delay:.1f} giây trước khi kết bạn tiếp...")
                     time.sleep(delay)
 
             # Hiển thị kết quả
             self.log_to_gui("\n" + "="*60)
-            self.log_to_gui(f"✅ HOÀN TẤT KẾT BẠN HÀNG LOẠT")
+            self.log_to_gui(f"[OK] HOÀN TẤT KẾT BẠN HÀNG LOẠT")
             self.log_to_gui(f"   - Tổng số: {len(customers_with_phone)}")
             self.log_to_gui(f"   - Thành công: {success_count}")
             self.log_to_gui(f"   - Đã là bạn bè: {already_friend_count}")
@@ -3438,21 +3702,21 @@ Trân trọng!"""
 
             # Hiển thị danh sách thành công
             if success_count > 0:
-                self.log_to_gui(f"\n📋 Danh sách kết bạn thành công ({success_count}):")
+                self.log_to_gui(f"\n[DANH SACH] Danh sách kết bạn thành công ({success_count}):")
                 for idx, result in enumerate([r for r in results if r['status'] == 'success'], 1):
                     zalo_name_info = f" - Zalo: {result['zalo_name']}" if result['zalo_name'] else ""
                     self.log_to_gui(f"   {idx}. {result['name']} ({result['phone']}){zalo_name_info}")
 
             # Hiển thị danh sách đã gửi lời mời trước đó
             if already_sent_count > 0:
-                self.log_to_gui(f"\n⚠️ Danh sách đã gửi lời mời trước đó ({already_sent_count}):")
+                self.log_to_gui(f"\n[⚠️] Danh sách đã gửi lời mời trước đó ({already_sent_count}):")
                 for idx, result in enumerate([r for r in results if r['status'] == 'already_sent'], 1):
                     zalo_name_info = f" - Zalo: {result['zalo_name']}" if result['zalo_name'] else ""
                     self.log_to_gui(f"   {idx}. {result['name']} ({result['phone']}){zalo_name_info}")
 
             # Hiển thị danh sách thất bại
             if failed_count > 0:
-                self.log_to_gui(f"\n❌ Danh sách kết bạn thất bại ({failed_count}):")
+                self.log_to_gui(f"\n[LỖI] Danh sách kết bạn thất bại ({failed_count}):")
                 for idx, result in enumerate([r for r in results if r['status'] == 'failed'], 1):
                     self.log_to_gui(f"   {idx}. {result['name']} ({result['phone']})")
 
@@ -3460,19 +3724,19 @@ Trân trọng!"""
 
             # Ghi kết quả vào file Excel
             if self.zalo_excel_path and results:
-                self.log_to_gui("\n💾 Đang lưu kết quả vào file Excel...")
+                self.log_to_gui("\n[💾] Đang lưu kết quả vào file Excel...")
                 try:
                     self.save_results_to_excel(results)
-                    self.log_to_gui("✅ Đã lưu kết quả vào file Excel")
+                    self.log_to_gui("[OK] Đã lưu kết quả vào file Excel")
                 except Exception as e:
-                    self.log_to_gui(f"⚠️ Không thể lưu kết quả vào Excel: {str(e)}")
+                    self.log_to_gui(f"[⚠️] Không thể lưu kết quả vào Excel: {str(e)}")
 
             # Disable nút điều khiển
             self.zalo_pause_button.configure(state="disabled")
 
             # Giữ trình duyệt mở
-            self.log_to_gui("\nℹ️ Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
-            self.log_to_gui("⚠️ Đóng cửa sổ trình duyệt khi hoàn tất")
+            self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
+            self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
 
             # Chờ người dùng đóng
             try:
@@ -3492,11 +3756,11 @@ Trân trọng!"""
                 pass
 
         except ImportError as e:
-            self.log_to_gui(f"❌ Lỗi import: {str(e)}")
-            self.log_to_gui("💡 Vui lòng cài đặt: pip install playwright")
+            self.log_to_gui(f"[LỖI] Lỗi import: {str(e)}")
+            self.log_to_gui("[📝] Vui lòng cài đặt: pip install playwright")
             self.zalo_pause_button.configure(state="disabled")
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi kết bạn: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi kết bạn: {str(e)}")
             self.zalo_pause_button.configure(state="disabled")
 
     # === QUẢN LÝ NHIỀU TÀI KHOẢN ZALO ===
@@ -3527,7 +3791,7 @@ Trân trọng!"""
                 self.update_account_info_display(accounts[0])
 
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi load danh sách tài khoản: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi load danh sách tài khoản: {str(e)}")
 
     def on_account_selected(self, choice):
         """Xử lý khi chọn tài khoản từ combobox"""
@@ -3544,11 +3808,11 @@ Trân trọng!"""
                 if account['account_name'] == account_name:
                     self.current_account_id = account['id']
                     self.update_account_info_display(account)
-                    self.log_to_gui(f"✅ Đã chọn tài khoản: {account_name}")
+                    self.log_to_gui(f"[OK] Đã chọn tài khoản: {account_name}")
                     break
 
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi chọn tài khoản: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi chọn tài khoản: {str(e)}")
 
     def update_account_info_display(self, account):
         """Cập nhật hiển thị thông tin tài khoản"""
@@ -3569,9 +3833,9 @@ Trân trọng!"""
         # Cập nhật trạng thái
         status = account.get('status', 'inactive')
         if status == 'active':
-            self.zalo_status_label.configure(text="✅ Active", text_color="green")
+            self.zalo_status_label.configure(text="[OK] Active", text_color="green")
         else:
-            self.zalo_status_label.configure(text="❌ Inactive", text_color="red")
+            self.zalo_status_label.configure(text="[LỖI] Inactive", text_color="red")
 
     def add_zalo_account(self):
         """Thêm tài khoản Zalo mới"""
@@ -3595,7 +3859,7 @@ Trân trọng!"""
             # Thêm tài khoản mới
             new_account = self.account_manager.add_account(account_name)
 
-            self.log_to_gui(f"✅ Đã thêm tài khoản: {account_name}")
+            self.log_to_gui(f"[OK] Đã thêm tài khoản: {account_name}")
             self.log_to_gui(f"   ID: {new_account['id']}")
             self.log_to_gui(f"   Session directory: {new_account['session_dir']}")
 
@@ -3614,7 +3878,7 @@ Trân trọng!"""
             )
 
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi thêm tài khoản: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi thêm tài khoản: {str(e)}")
             messagebox.showerror(
                 "Lỗi",
                 f"Không thể thêm tài khoản!\n{str(e)}",
@@ -3646,7 +3910,7 @@ Trân trọng!"""
             if result:
                 # Xóa tài khoản
                 if self.account_manager.delete_account(self.current_account_id):
-                    self.log_to_gui(f"✅ Đã xóa tài khoản: {account['account_name']}")
+                    self.log_to_gui(f"[OK] Đã xóa tài khoản: {account['account_name']}")
 
                     # Reset current account
                     self.current_account_id = None
@@ -3667,173 +3931,25 @@ Trân trọng!"""
                     )
 
         except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi xóa tài khoản: {str(e)}")
+            self.log_to_gui(f"[LỖI] Lỗi khi xóa tài khoản: {str(e)}")
 
     def import_zalo_from_sheet(self):
         """Nhập dữ liệu khách hàng từ Google Sheet cho Auto Zalo"""
-        try:
-            # Tạo dialog để nhập Sheet URL/ID
-            dialog = customtkinter.CTkInputDialog(
-                text="Nhập URL hoặc ID của Google Sheet:",
-                title="Nhập từ Google Sheet"
-            )
-            sheet_url = dialog.get_input()
-
-            if not sheet_url:
-                self.log_to_gui("❌ Đã hủy nhập từ Sheet")
-                return
-
-            self.log_to_gui("🔄 Đang kết nối với Google Sheets...")
-
-            # Trích xuất Sheet ID từ URL
-            try:
-                sheet_id = google_sheet_logic.get_spreadsheet_id_from_url(sheet_url)
-                self.log_to_gui(f"✅ Sheet ID: {sheet_id}")
-            except Exception as e:
-                raise Exception(f"URL/ID không hợp lệ: {str(e)}")
-
-            # Xác thực với Google Sheets API
-            self.log_to_gui("🔐 Đang xác thực với Google Sheets API...")
-            if not self.sheet_manager.authenticate():
-                raise Exception("Xác thực thất bại")
-
-            self.log_to_gui("✅ Xác thực thành công!")
-
-            # Hỏi người dùng về tên sheet và phạm vi
-            range_dialog = customtkinter.CTkInputDialog(
-                text="Nhập tên sheet và phạm vi (VD: Sheet1!A:Z):",
-                title="Phạm vi dữ liệu"
-            )
-            range_name = range_dialog.get_input()
-
-            if not range_name:
-                range_name = "Sheet1!A:Z"  # Mặc định
-
-            self.log_to_gui(f"📊 Đang đọc dữ liệu từ phạm vi: {range_name}...")
-
-            # Đọc dữ liệu từ Sheet
-            values = self.sheet_manager.read_sheet_data(sheet_id, range_name)
-            self.log_to_gui(f"✅ Đã đọc {len(values)} dòng từ Sheet")
-
-            # Parse dữ liệu thành format khách hàng
-            self.log_to_gui("🔄 Đang xử lý dữ liệu...")
-            self.zalo_customer_data = self.sheet_manager.parse_customer_data(values)
-
-            # Cập nhật giao diện
-            self.zalo_excel_path = f"Google Sheet: {sheet_id}"
-            self.zalo_file_label.configure(
-                text=f"Google Sheet (ID: {sheet_id[:20]}...)",
-                text_color="#0F9D58"
-            )
-            self.zalo_customer_count_label.configure(
-                text=f"Số khách hàng: {len(self.zalo_customer_data)}"
-            )
-
-            self.log_to_gui(f"✅ Đã nhập thành công {len(self.zalo_customer_data)} khách hàng từ Google Sheet!")
-
-            messagebox.showinfo(
-                "Thành công",
-                f"Đã nhập {len(self.zalo_customer_data)} khách hàng từ Google Sheet!",
-                parent=self
-            )
-
-        except FileNotFoundError as e:
-            self.log_to_gui(f"❌ {str(e)}")
-            messagebox.showerror(
-                "Thiếu file credentials",
-                str(e),
-                parent=self
-            )
-        except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi nhập từ Sheet: {str(e)}")
-            messagebox.showerror(
-                "Lỗi",
-                f"Không thể nhập dữ liệu từ Sheet!\n\n{str(e)}",
-                parent=self
-            )
+        self.log_to_gui("[ℹ️] Chức năng 'Nhập từ Sheet' sẽ được thêm sau")
+        messagebox.showinfo(
+            "Thông báo",
+            "Chức năng 'Nhập từ Google Sheet' sẽ được thêm sau",
+            parent=self
+        )
 
     def import_contract_from_sheet(self):
         """Nhập dữ liệu hợp đồng từ Google Sheet cho Kiểm Tra Hợp Đồng"""
-        try:
-            # Tạo dialog để nhập Sheet URL/ID
-            dialog = customtkinter.CTkInputDialog(
-                text="Nhập URL hoặc ID của Google Sheet:",
-                title="Nhập từ Google Sheet"
-            )
-            sheet_url = dialog.get_input()
-
-            if not sheet_url:
-                self.log_to_gui("❌ Đã hủy nhập từ Sheet")
-                return
-
-            self.log_to_gui("🔄 Đang kết nối với Google Sheets...")
-
-            # Trích xuất Sheet ID từ URL
-            try:
-                sheet_id = google_sheet_logic.get_spreadsheet_id_from_url(sheet_url)
-                self.log_to_gui(f"✅ Sheet ID: {sheet_id}")
-            except Exception as e:
-                raise Exception(f"URL/ID không hợp lệ: {str(e)}")
-
-            # Xác thực với Google Sheets API
-            self.log_to_gui("🔐 Đang xác thực với Google Sheets API...")
-            if not self.sheet_manager.authenticate():
-                raise Exception("Xác thực thất bại")
-
-            self.log_to_gui("✅ Xác thực thành công!")
-
-            # Hỏi người dùng về tên sheet và phạm vi
-            range_dialog = customtkinter.CTkInputDialog(
-                text="Nhập tên sheet và phạm vi (VD: Sheet1!A:Z):",
-                title="Phạm vi dữ liệu"
-            )
-            range_name = range_dialog.get_input()
-
-            if not range_name:
-                range_name = "Sheet1!A:Z"  # Mặc định
-
-            self.log_to_gui(f"📊 Đang đọc dữ liệu từ phạm vi: {range_name}...")
-
-            # Đọc dữ liệu từ Sheet
-            values = self.sheet_manager.read_sheet_data(sheet_id, range_name)
-            self.log_to_gui(f"✅ Đã đọc {len(values)} dòng từ Sheet")
-
-            # Parse dữ liệu thành format hợp đồng
-            self.log_to_gui("🔄 Đang xử lý dữ liệu...")
-            self.contract_data = self.sheet_manager.parse_contract_data(values)
-
-            # Cập nhật giao diện
-            self.contract_excel_path = f"Google Sheet: {sheet_id}"
-            self.contract_file_label.configure(
-                text=f"Google Sheet (ID: {sheet_id[:20]}...)",
-                text_color="#0F9D58"
-            )
-            self.contract_count_label.configure(
-                text=f"Số lượng: {len(self.contract_data)}"
-            )
-
-            self.log_to_gui(f"✅ Đã nhập thành công {len(self.contract_data)} hợp đồng từ Google Sheet!")
-
-            messagebox.showinfo(
-                "Thành công",
-                f"Đã nhập {len(self.contract_data)} hợp đồng từ Google Sheet!",
-                parent=self
-            )
-
-        except FileNotFoundError as e:
-            self.log_to_gui(f"❌ {str(e)}")
-            messagebox.showerror(
-                "Thiếu file credentials",
-                str(e),
-                parent=self
-            )
-        except Exception as e:
-            self.log_to_gui(f"❌ Lỗi khi nhập từ Sheet: {str(e)}")
-            messagebox.showerror(
-                "Lỗi",
-                f"Không thể nhập dữ liệu từ Sheet!\n\n{str(e)}",
-                parent=self
-            )
+        self.log_to_gui("[ℹ️] Chức năng 'Nhập từ Sheet' sẽ được thêm sau")
+        messagebox.showinfo(
+            "Thông báo",
+            "Chức năng 'Nhập từ Google Sheet' sẽ được thêm sau",
+            parent=self
+        )
 
 
 if __name__ == "__main__":
