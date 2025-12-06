@@ -345,29 +345,37 @@ class ZaloSessionManager:
             logger.error(f"Lỗi khi xóa session: {str(e)}")
             return False
     
-    def create_persistent_context(self, playwright):
+    def create_persistent_context(self, playwright, headless=False):
         """
         Tạo persistent browser context
         
         Args:
             playwright: Playwright instance
+            headless: Chạy headless mode hay không
             
         Returns:
             BrowserContext: Persistent context
         """
         try:
-            logger.info("Đang tạo persistent context...")
+            logger.info(f"Đang tạo persistent context (headless={headless})...")
             
             # Tạo persistent context - tự động lưu cookies, storage, cache
             context = playwright.chromium.launch_persistent_context(
                 user_data_dir=self.session_dir,
-                headless=False,
+                headless=headless,
                 viewport={'width': 1280, 'height': 720},
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 # Các tùy chọn bổ sung
                 accept_downloads=True,
                 locale='vi-VN',
-                timezone_id='Asia/Ho_Chi_Minh'
+                timezone_id='Asia/Ho_Chi_Minh',
+                # Thêm args cho headless mode
+                args=['--disable-blink-features=AutomationControlled'] if not headless else [
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-gpu',
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage'
+                ]
             )
             
             logger.info("✓ Đã tạo persistent context")
@@ -377,12 +385,18 @@ class ZaloSessionManager:
             logger.error(f"Lỗi khi tạo persistent context: {str(e)}")
             raise
     
-    def login_with_session(self, max_wait_time=300):
+    def login_with_session(self, max_wait_time=300, headless=False):
         """
-        Đăng nhập Zalo với session persistence
+        Đăng nhập Zalo với session persistence và hỗ trợ headless mode
+        
+        Headless mode:
+        - Nếu đã có session hợp lệ: chạy headless
+        - Nếu cần đăng nhập mới (quét QR): tự động chuyển sang non-headless,
+          sau khi đăng nhập thành công sẽ đóng browser và chạy lại headless
 
         Args:
             max_wait_time: Thời gian chờ tối đa cho việc quét QR (giây)
+            headless: Chạy headless mode hay không (mặc định False)
 
         Returns:
             tuple: (success: bool, playwright_instance, context, page)
@@ -391,8 +405,9 @@ class ZaloSessionManager:
             # KHÔNG dùng with để context không tự động đóng
             p = sync_playwright().start()
 
-            # Tạo persistent context
-            context = self.create_persistent_context(p)
+            # Bước 1: Thử kết nối với headless (hoặc non-headless nếu user chọn)
+            logger.info(f"Bước 1: Tạo context với headless={headless}")
+            context = self.create_persistent_context(p, headless=headless)
 
             # Lấy page đầu tiên hoặc tạo mới
             if len(context.pages) > 0:
@@ -410,6 +425,8 @@ class ZaloSessionManager:
 
             if zalo.check_logged_in():
                 logger.info("✅ Đã đăng nhập trước đó! Sử dụng session cũ")
+                if headless:
+                    logger.info("✅ Chạy ở chế độ headless")
 
                 # Lưu thông tin session
                 self.save_session_info({
@@ -419,7 +436,28 @@ class ZaloSessionManager:
 
                 return True, p, context, page
 
-            # Nếu chưa đăng nhập, thực hiện đăng nhập mới
+            # Nếu chưa đăng nhập và đang ở headless mode
+            if headless:
+                logger.info("⚠️ Cần đăng nhập mới (quét QR code)")
+                logger.info("🔄 Đang chuyển sang chế độ hiển thị browser để quét QR...")
+                
+                # Đóng context headless hiện tại
+                context.close()
+                p.stop()
+                
+                # Tạo lại context với non-headless để quét QR
+                p = sync_playwright().start()
+                context = self.create_persistent_context(p, headless=False)
+                
+                if len(context.pages) > 0:
+                    page = context.pages[0]
+                else:
+                    page = context.new_page()
+                
+                zalo = ZaloLogin(page=page, context=context)
+                logger.info("📱 Đã mở trình duyệt. Vui lòng quét QR code...")
+
+            # Thực hiện đăng nhập mới
             logger.info("Session không còn hiệu lực, cần đăng nhập lại...")
             success = zalo.login(max_wait_time)
 
@@ -429,6 +467,12 @@ class ZaloSessionManager:
                     'last_login': time.strftime('%Y-%m-%d %H:%M:%S'),
                     'status': 'active'
                 })
+                
+                logger.info("✅ Đăng nhập thành công!")
+                
+                # Nếu user chọn headless ban đầu, thông báo sẽ đóng browser
+                if headless:
+                    logger.info("ℹ️ Đăng nhập hoàn tất. Browser sẽ đóng và chạy lại ở chế độ ngầm...")
 
                 return True, p, context, page
 
