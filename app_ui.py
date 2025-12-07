@@ -277,9 +277,65 @@ class App(customtkinter.CTk):
             font=customtkinter.CTkFont(size=11)
         )
         self.headless_checkbox.pack(pady=5, anchor="w")
+
+        # Divider
+        separator2 = customtkinter.CTkFrame(top_frame, height=2, fg_color="gray30")
+        separator2.pack(fill="x", padx=15, pady=8)
+
+        # === NÚT ĐIỀU KHIỂN CHUNG ===
+        control_label = customtkinter.CTkLabel(
+            top_frame,
+            text="ĐIỀU KHIỂN HỆ THỐNG",
+            font=customtkinter.CTkFont(weight="bold", size=13)
+        )
+        control_label.pack(pady=(5, 8), padx=10)
+
+        control_frame = customtkinter.CTkFrame(top_frame, fg_color="transparent")
+        control_frame.pack(pady=(0, 10), padx=15, fill="x")
+
+        # Grid cho 3 nút
+        control_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # Nút Tạm Dừng
+        self.global_pause_button = customtkinter.CTkButton(
+            control_frame,
+            text="⏸ Tạm Dừng",
+            command=self.global_toggle_pause,
+            state="disabled",
+            fg_color="#F9A825",
+            hover_color="#F57F17",
+            height=36,
+            font=customtkinter.CTkFont(size=12, weight="bold")
+        )
+        self.global_pause_button.grid(row=0, column=0, padx=3, pady=5, sticky="ew")
+
+        # Nút Dừng
+        self.global_stop_button = customtkinter.CTkButton(
+            control_frame,
+            text="⏹ Dừng",
+            command=self.global_stop,
+            state="disabled",
+            fg_color="#D32F2F",
+            hover_color="#B71C1C",
+            height=36,
+            font=customtkinter.CTkFont(size=12, weight="bold")
+        )
+        self.global_stop_button.grid(row=0, column=1, padx=3, pady=5, sticky="ew")
+
+        # Nút Reset
+        self.global_reset_button = customtkinter.CTkButton(
+            control_frame,
+            text="🔄 Làm Mới",
+            command=self.global_reset,
+            fg_color="#1565C0",
+            hover_color="#0D47A1",
+            height=36,
+            font=customtkinter.CTkFont(size=12, weight="bold")
+        )
+        self.global_reset_button.grid(row=0, column=2, padx=3, pady=5, sticky="ew")
         
         # Spacer để đảm bảo nội dung không bị che
-        spacer = customtkinter.CTkFrame(top_frame, height=20, fg_color="transparent")
+        spacer = customtkinter.CTkFrame(top_frame, height=10, fg_color="transparent")
         spacer.pack(fill="x")
         
         # === DƯỚI: LOG TRẠNG THÁI ===
@@ -1226,9 +1282,17 @@ class App(customtkinter.CTk):
         if is_rpa_task:
             self.pause_button.configure(state="normal", text="Tạm Dừng", fg_color="#F9A825", hover_color="#F57F17")
             self.stop_button.configure(state="normal")
+            
+            # Enable các nút điều khiển toàn cục
+            self.global_pause_button.configure(state="normal")
+            self.global_stop_button.configure(state="normal")
         else:
             self.pause_button.configure(state="disabled", text="Tạm Dừng", fg_color="gray")
             self.stop_button.configure(state="disabled")
+            
+            # Disable các nút điều khiển toàn cục
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
 
 
     def _enable_all_controls(self):
@@ -1239,6 +1303,20 @@ class App(customtkinter.CTk):
         self.extract_button.configure(state="normal")
         self.pause_button.configure(state="disabled", text="Tạm Dừng", fg_color="gray")
         self.stop_button.configure(state="disabled")
+        
+        # Reset các nút điều khiển toàn cục về trạng thái disabled
+        self.global_pause_button.configure(
+            state="disabled",
+            text="⏸ Tạm Dừng",
+            fg_color="#F9A825",
+            hover_color="#F57F17"
+        )
+        self.global_stop_button.configure(
+            state="disabled",
+            text="⏹ Dừng",
+            fg_color="#D32F2F",
+            hover_color="#B71C1C"
+        )
     
     def _show_completion_notification(self, title, message, success=True):
         """Hiển thị thông báo hoàn thành tác vụ"""
@@ -1608,6 +1686,139 @@ class App(customtkinter.CTk):
             self._disable_all_controls(is_rpa_task=False) # Tắt hết nút
             self.stop_button.configure(text="Đang dừng...")
 
+    # === HÀM ĐIỀU KHIỂN TOÀN CỤC (GLOBAL CONTROL) ===
+    
+    def global_toggle_pause(self):
+        """Tạm dừng/tiếp tục tất cả các tác vụ"""
+        if self.pause_event.is_set():
+            # Đang chạy -> Tạm dừng
+            self.pause_event.clear()
+            self.global_pause_button.configure(
+                text="▶ Tiếp Tục",
+                fg_color="#4CAF50",
+                hover_color="#388E3C"
+            )
+            self.log_to_gui("\n" + "="*60)
+            self.log_to_gui("⏸ HỆ THỐNG ĐÃ TẠM DỪNG")
+            self.log_to_gui("Nhấn '▶ Tiếp Tục' để chạy lại")
+            self.log_to_gui("="*60)
+            
+            # Cập nhật nút pause riêng của RPA
+            if self.pause_button.cget("state") == "normal":
+                self.pause_button.configure(text="Tiếp Tục", fg_color="#4CAF50", hover_color="#388E3C")
+            
+            # Cập nhật nút pause của Zalo
+            if hasattr(self, 'is_paused'):
+                self.is_paused = True
+                if hasattr(self, 'zalo_pause_button') and self.zalo_pause_button.cget("state") == "normal":
+                    self.zalo_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
+                if hasattr(self, 'message_pause_button') and self.message_pause_button.cget("state") == "normal":
+                    self.message_pause_button.configure(text="Tiếp tục", fg_color="#28A745", hover_color="#218838")
+        else:
+            # Đang tạm dừng -> Tiếp tục
+            self.pause_event.set()
+            self.global_pause_button.configure(
+                text="⏸ Tạm Dừng",
+                fg_color="#F9A825",
+                hover_color="#F57F17"
+            )
+            self.log_to_gui("\n" + "="*60)
+            self.log_to_gui("▶ HỆ THỐNG ĐANG TIẾP TỤC")
+            self.log_to_gui("="*60)
+            
+            # Cập nhật nút pause riêng của RPA
+            if self.pause_button.cget("state") == "normal":
+                self.pause_button.configure(text="Tạm Dừng", fg_color="#F9A825", hover_color="#F57F17")
+            
+            # Cập nhật nút pause của Zalo
+            if hasattr(self, 'is_paused'):
+                self.is_paused = False
+                if hasattr(self, 'zalo_pause_button') and self.zalo_pause_button.cget("state") == "normal":
+                    self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+                if hasattr(self, 'message_pause_button') and self.message_pause_button.cget("state") == "normal":
+                    self.message_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
+
+    def global_stop(self):
+        """Dừng tất cả các tác vụ đang chạy"""
+        self.log_to_gui("\n" + "="*60)
+        self.log_to_gui("⏹ ĐANG DỪNG TẤT CẢ TÁC VỤ...")
+        self.log_to_gui("="*60)
+        
+        # Dừng RPA tasks
+        self.stop_event.set()
+        self.pause_event.set()  # Resume để thoát khỏi trạng thái pause
+        
+        # Cập nhật trạng thái nút
+        self.global_stop_button.configure(text="Đang dừng...")
+        
+        self.log_to_gui("⚠️ Vui lòng chờ hệ thống dừng an toàn...")
+        
+        # Disable các nút điều khiển
+        self._disable_all_controls(is_rpa_task=False)
+
+    def global_reset(self):
+        """Reset lại trạng thái hệ thống"""
+        self.log_to_gui("\n" + "="*60)
+        self.log_to_gui("🔄 ĐANG LÀM MỚI HỆ THỐNG...")
+        self.log_to_gui("="*60)
+        
+        # Reset pause và stop events
+        self.pause_event.set()
+        self.stop_event.clear()
+        
+        # Reset Zalo pause state
+        if hasattr(self, 'is_paused'):
+            self.is_paused = False
+        
+        # Enable lại các nút
+        self._enable_all_controls()
+        
+        # Reset trạng thái các nút điều khiển toàn cục
+        self.global_pause_button.configure(
+            text="⏸ Tạm Dừng",
+            state="disabled",
+            fg_color="#F9A825",
+            hover_color="#F57F17"
+        )
+        self.global_stop_button.configure(
+            text="⏹ Dừng",
+            state="disabled",
+            fg_color="#D32F2F",
+            hover_color="#B71C1C"
+        )
+        
+        # Reset các nút pause riêng
+        if hasattr(self, 'pause_button'):
+            self.pause_button.configure(
+                text="Tạm Dừng",
+                state="disabled",
+                fg_color="gray"
+            )
+        
+        if hasattr(self, 'stop_button'):
+            self.stop_button.configure(
+                text="Kết Thúc (RPA)",
+                state="disabled",
+                fg_color="#D32F2F"
+            )
+        
+        if hasattr(self, 'zalo_pause_button'):
+            self.zalo_pause_button.configure(
+                text="Tạm dừng",
+                state="disabled",
+                fg_color="#6C757D"
+            )
+        
+        if hasattr(self, 'message_pause_button'):
+            self.message_pause_button.configure(
+                text="Tạm dừng",
+                state="disabled",
+                fg_color="#6C757D"
+            )
+        
+        self.log_to_gui("✅ Hệ thống đã được làm mới")
+        self.log_to_gui("="*60)
+
     # --- HÀM PLACEHOLDER CHO ZALO & GOOGLE SHEETS ---
     def open_zalo_window(self):
         """Mở cửa sổ mới để xử lý Zalo với Session Management"""
@@ -1651,8 +1862,13 @@ class App(customtkinter.CTk):
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
 
+            # Lấy headless mode từ checkbox
+            headless = self.headless_mode_var.get()
+            if headless:
+                self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
+
             # Đăng nhập Zalo
-            success, p, context, page = session_manager.login_with_session(max_wait_time=30)
+            success, p, context, page = session_manager.login_with_session(max_wait_time=30, headless=headless)
 
             if not success:
                 self.log_to_gui("Không thể kết nối Zalo")
@@ -1693,8 +1909,10 @@ class App(customtkinter.CTk):
             # Reload danh sách tài khoản để cập nhật tên Zalo
             self.load_account_list()
 
-            # Cleanup
+            # Cleanup - Luôn đóng trình duyệt sau khi kiểm tra xong
             try:
+                if headless:
+                    self.log_to_gui("[✓] Đóng trình duyệt (chế độ ngầm)")
                 if context:
                     context.close()
                 if p:
@@ -3324,6 +3542,10 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
         self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
         self.zalo_pause_button.configure(state="normal")
 
+        # Enable các nút điều khiển toàn cục
+        self.global_pause_button.configure(state="normal")
+        self.global_stop_button.configure(state="normal")
+
         # Chạy trong thread riêng
         thread = threading.Thread(
             target=self._run_send_bulk_messages,
@@ -3399,6 +3621,10 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
         self.zalo_pause_button.configure(text="Tạm dừng", fg_color="#6C757D", hover_color="#5A6268")
         self.zalo_pause_button.configure(state="normal")  # Enable nút tạm dừng
 
+        # Enable các nút điều khiển toàn cục
+        self.global_pause_button.configure(state="normal")
+        self.global_stop_button.configure(state="normal")
+
         # Chạy trong thread riêng
         thread = threading.Thread(
             target=self._run_add_friends_bulk,
@@ -3444,7 +3670,13 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
-            success, p, context, page = session_manager.login_with_session(max_wait_time=60)
+            
+            # Lấy headless mode từ checkbox
+            headless = self.headless_mode_var.get()
+            if headless:
+                self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
+            
+            success, p, context, page = session_manager.login_with_session(max_wait_time=60, headless=headless)
 
             if not success:
                 self.log_to_gui("[LỖI] Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
@@ -3497,36 +3729,56 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
 
-            # Giữ trình duyệt mở
-            self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
-            self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
+            # Disable các nút điều khiển toàn cục
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
 
-            # Chờ người dùng đóng
-            try:
-                import random
-                while not page.is_closed():
-                    time.sleep(random.uniform(0.8, 1.2))
-            except:
-                pass
+            # Xử lý đóng trình duyệt dựa trên chế độ
+            if headless:
+                # Chế độ ngầm: Đóng ngay
+                self.log_to_gui("\n[✓] Tác vụ hoàn tất - Đóng trình duyệt (chế độ ngầm)")
+                try:
+                    if context:
+                        context.close()
+                    if p:
+                        p.stop()
+                except:
+                    pass
+            else:
+                # Chế độ hiển thị: Giữ mở cho người dùng
+                self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
+                self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
 
-            # Cleanup
-            try:
-                if context:
-                    context.close()
-                if p:
-                    p.stop()
-            except:
-                pass
+                # Chờ người dùng đóng
+                try:
+                    import random
+                    while not page.is_closed():
+                        time.sleep(random.uniform(0.8, 1.2))
+                except:
+                    pass
+
+                # Cleanup
+                try:
+                    if context:
+                        context.close()
+                    if p:
+                        p.stop()
+                except:
+                    pass
 
         except ImportError as e:
             self.log_to_gui(f"[LỖI] Lỗi import: {str(e)}")
             self.log_to_gui("[📝] Vui lòng cài đặt: pip install playwright")
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
         except Exception as e:
             self.log_to_gui(f"[LỖI] Lỗi khi gửi tin nhắn: {str(e)}")
             self.zalo_pause_button.configure(state="disabled")
             self.message_pause_button.configure(state="disabled")
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
 
     def _run_add_friends_bulk(self):
         """Thread worker để kết bạn hàng loạt"""
@@ -3555,7 +3807,13 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
 
             # Lấy session manager cho tài khoản đã chọn
             session_manager = self.account_manager.get_session_manager(self.current_account_id)
-            success, p, context, page = session_manager.login_with_session(max_wait_time=60)
+            
+            # Lấy headless mode từ checkbox
+            headless = self.headless_mode_var.get()
+            if headless:
+                self.log_to_gui("⚙️ Chế độ: Chạy ngầm (headless)")
+            
+            success, p, context, page = session_manager.login_with_session(max_wait_time=60, headless=headless)
 
             if not success:
                 self.log_to_gui("[LỖI] Không thể đăng nhập Zalo. Vui lòng đăng nhập thủ công trước!")
@@ -3734,34 +3992,54 @@ Xin cảm ơn và chúc {gender} {name} luôn thành công!"""
             # Disable nút điều khiển
             self.zalo_pause_button.configure(state="disabled")
 
-            # Giữ trình duyệt mở
-            self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
-            self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
+            # Disable các nút điều khiển toàn cục
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
 
-            # Chờ người dùng đóng
-            try:
-                import random
-                while not page.is_closed():
-                    time.sleep(random.uniform(0.8, 1.2))
-            except:
-                pass
+            # Xử lý đóng trình duyệt dựa trên chế độ
+            if headless:
+                # Chế độ ngầm: Đóng ngay
+                self.log_to_gui("\n[✓] Tác vụ hoàn tất - Đóng trình duyệt (chế độ ngầm)")
+                try:
+                    if context:
+                        context.close()
+                    if p:
+                        p.stop()
+                except:
+                    pass
+            else:
+                # Chế độ hiển thị: Giữ mở cho người dùng
+                self.log_to_gui("\n[ℹ️] Trình duyệt vẫn mở, bạn có thể tiếp tục sử dụng Zalo")
+                self.log_to_gui("[⚠️] Đóng cửa sổ trình duyệt khi hoàn tất")
 
-            # Cleanup
-            try:
-                if context:
-                    context.close()
-                if p:
-                    p.stop()
-            except:
-                pass
+                # Chờ người dùng đóng
+                try:
+                    import random
+                    while not page.is_closed():
+                        time.sleep(random.uniform(0.8, 1.2))
+                except:
+                    pass
+
+                # Cleanup
+                try:
+                    if context:
+                        context.close()
+                    if p:
+                        p.stop()
+                except:
+                    pass
 
         except ImportError as e:
             self.log_to_gui(f"[LỖI] Lỗi import: {str(e)}")
             self.log_to_gui("[📝] Vui lòng cài đặt: pip install playwright")
             self.zalo_pause_button.configure(state="disabled")
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
         except Exception as e:
             self.log_to_gui(f"[LỖI] Lỗi khi kết bạn: {str(e)}")
             self.zalo_pause_button.configure(state="disabled")
+            self.global_pause_button.configure(state="disabled")
+            self.global_stop_button.configure(state="disabled")
 
     # === QUẢN LÝ NHIỀU TÀI KHOẢN ZALO ===
 
