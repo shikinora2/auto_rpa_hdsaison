@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 from config.settings import ZALO_ACCOUNTS_FILE, ZALO_SESSION_DIR
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
+from utils.file_utils import atomic_write_json
 
 # Thread pool cho việc chạy sync Playwright (max 1 vì persistent context)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -132,7 +133,7 @@ def load_accounts() -> List[dict]:
 
 
 def save_accounts(accounts: List[dict]) -> bool:
-    """Lưu danh sách tài khoản"""
+    """Lưu danh sách tài khoản (atomic write — tránh corrupt khi crash)"""
     try:
         ZALO_ACCOUNTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -148,9 +149,7 @@ def save_accounts(accounts: List[dict]) -> bool:
                 normalized["name"] = normalized["account_name"]
             normalized_accounts.append(normalized)
 
-        with open(ZALO_ACCOUNTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(normalized_accounts, f, indent=2, ensure_ascii=False)
-        return True
+        return atomic_write_json(ZALO_ACCOUNTS_FILE, normalized_accounts)
     except Exception as e:
         print(f"Error saving accounts: {e}")
         return False

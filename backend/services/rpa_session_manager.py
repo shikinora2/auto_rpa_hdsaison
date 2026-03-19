@@ -44,6 +44,19 @@ class RPASessionManager:
         RPA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
         return str(RPA_SESSION_DIR)
 
+    def _clear_stale_session(self):
+        """
+        Xóa session dir khi phát hiện session hết hạn (stale).
+        Lần đăng nhập tiếp theo sẽ bắt đầu fresh — không load lại session hỏng.
+        """
+        try:
+            if RPA_SESSION_DIR.exists():
+                shutil.rmtree(RPA_SESSION_DIR, ignore_errors=True)
+                print(f"[RPA] 🗑️  Đã xóa session cũ bị hết hạn: {RPA_SESSION_DIR}")
+                self.is_logged_in = False
+        except Exception as e:
+            print(f"[RPA] Không thể xóa session cũ: {e}")
+
     def _log_from_thread(self, loop, callback, message):
         """
         Log message an toàn từ trong thread (không có running loop).
@@ -87,8 +100,14 @@ class RPASessionManager:
                     context.close()
                     return True
                 else:
-                    self._log_from_thread(loop, status_callback, "⚠ Session hết hạn hoặc chưa đăng nhập.")
+                    # Session đã hết hạn (bị văng về trang Login)
+                    self._log_from_thread(
+                        loop, status_callback,
+                        "⚠ Session hết hạn (bị chuyển về trang login). Đang xóa session cũ để force re-login..."
+                    )
                     context.close()
+                    # Xóa session dir cũ — tránh load lại session hỏng vòng vòng
+                    self._clear_stale_session()
                     return False
 
         except Exception as e:

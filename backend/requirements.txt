@@ -28,3 +28,6 @@ PyMuPDF==1.23.8
 
 # Date Utilities
 python-dateutil==2.8.2
+
+# Security — Mã hóa dữ liệu nhạy cảm (password)
+cryptography>=42.0.0
