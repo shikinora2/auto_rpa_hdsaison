@@ -3,7 +3,8 @@ Config API Routes
 Đọc/ghi file config.json
 
 Cải tiến bảo mật & ổn định:
-  - asyncio.Lock để tránh race condition khi nhiều request ghi đồng thời
+  - asyncio.Lock để serialize các thao tác đọc/ghi config
+  - Blocking I/O chạy qua asyncio.to_thread() để không block event loop
   - atomic_write_json() để tránh file hỏng khi crash giữa chừng
   - Mã hóa password trước khi lưu, tự động migrate plain text cũ
 """
@@ -18,8 +19,8 @@ from utils.encryption import encrypt_value, decrypt_value, is_encrypted
 
 router = APIRouter()
 
-# Lock toàn module để serialize mọi thao tác đọc/ghi config
-# (Giải quyết race condition khi nhiều async request ghi đồng thời)
+# Lock toàn module để serialize mọi thao tác đọc/ghi config.
+# Tránh race condition khi nhiều async request ghi đồng thời.
 _config_lock = asyncio.Lock()
 
 
@@ -32,9 +33,13 @@ class ConfigModel(BaseModel):
     save_format: Optional[str] = None
 
 
-def load_config() -> dict:
+# ─────────────────────────────────────────────────────────────────────────────
+# Sync core — gọi từ thread pool, KHÔNG gọi trực tiếp trong async handler
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _load_config_sync() -> dict:
     """
-    Đọc config từ file.
+    Đọc config từ file (sync, chạy trong thread).
     Tự động giải mã password và migrate plain text → encrypted nếu cần.
     """
     raw = safe_read_json(CONFIG_FILE, default=None)
@@ -43,7 +48,7 @@ def load_config() -> dict:
 
     config = {**DEFAULT_CONFIG, **raw}
 
-    # Giải mã password (tự động xử lý cả plain text cũ chưa encrypt)
+    # Giải mã password (decrypt_value tự xử lý cả plain text cũ — auto migrate)
     raw_password = config.get("password", "")
     if raw_password:
         decrypted = decrypt_value(raw_password)
@@ -58,13 +63,11 @@ def load_config() -> dict:
 
 def _save_config_sync(config: dict) -> bool:
     """
-    Lưu config vào file (sync, nội bộ).
-    Mã hóa password trước khi ghi.
-    Dùng atomic write để tránh corrupt khi crash.
+    Lưu config vào file (sync, chạy trong thread).
+    Mã hóa password trước khi ghi, dùng atomic write.
     """
     try:
         to_save = dict(config)
-        # Mã hóa password trước khi ghi ra file
         if to_save.get("password"):
             to_save["password"] = encrypt_value(to_save["password"])
         return atomic_write_json(CONFIG_FILE, to_save)
@@ -73,19 +76,48 @@ def _save_config_sync(config: dict) -> bool:
         return False
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Async wrappers — offload blocking I/O ra thread pool, không chặn event loop
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _load_config_async() -> dict:
+    """Async wrapper: chạy _load_config_sync() trong thread pool."""
+    return await asyncio.to_thread(_load_config_sync)
+
+
+async def _save_config_async(config: dict) -> bool:
+    """Async wrapper: chạy _save_config_sync() trong thread pool."""
+    return await asyncio.to_thread(_save_config_sync, config)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API (gọi từ các module khác, ví dụ zalo.py dùng load_config())
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_config() -> dict:
+    """
+    Public sync helper — dùng trong sync context (vd: bên trong thread pool executor).
+    Nếu đang trong async handler, hãy dùng _load_config_async() thay thế.
+    """
+    return _load_config_sync()
+
+
 def save_config(config: dict) -> bool:
     """
-    Public sync wrapper — dùng cho các call không trong async context.
-    Với async routes hãy dùng _save_config_sync() sau khi đã acquire lock.
+    Public sync helper — dùng trong sync context (vd: bên trong thread pool executor).
     """
     return _save_config_sync(config)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FastAPI Route Handlers
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("")
 async def get_config():
     """Lấy toàn bộ config"""
     async with _config_lock:
-        config = load_config()
+        config = await _load_config_async()
     # Không trả về password
     return {
         "username": config.get("username", ""),
@@ -100,9 +132,8 @@ async def get_config():
 async def update_config(config_data: ConfigModel):
     """Cập nhật config"""
     async with _config_lock:
-        current_config = load_config()
+        current_config = await _load_config_async()
 
-        # Chỉ cập nhật các field được gửi lên (không None)
         if config_data.username is not None:
             current_config["username"] = config_data.username
         if config_data.password is not None and config_data.password != "":
@@ -114,17 +145,18 @@ async def update_config(config_data: ConfigModel):
         if config_data.save_format is not None:
             current_config["save_format"] = config_data.save_format
 
-        if _save_config_sync(current_config):
-            return {"status": "success", "message": "Config updated successfully"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to save config")
+        ok = await _save_config_async(current_config)
+
+    if ok:
+        return {"status": "success", "message": "Config updated successfully"}
+    raise HTTPException(status_code=500, detail="Failed to save config")
 
 
 @router.get("/credentials")
 async def get_credentials():
     """Lấy thông tin đăng nhập (cho internal use)"""
     async with _config_lock:
-        config = load_config()
+        config = await _load_config_async()
     return {
         "username": config.get("username", ""),
         "password": config.get("password", "")
@@ -135,7 +167,7 @@ async def get_credentials():
 async def reset_config():
     """Reset config về mặc định"""
     async with _config_lock:
-        if _save_config_sync(DEFAULT_CONFIG):
-            return {"status": "success", "message": "Config reset to default"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to reset config")
+        ok = await _save_config_async(DEFAULT_CONFIG)
+    if ok:
+        return {"status": "success", "message": "Config reset to default"}
+    raise HTTPException(status_code=500, detail="Failed to reset config")
