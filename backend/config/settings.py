@@ -36,9 +36,9 @@ ZALO_SESSION_DIR = APP_DATA_DIR / "zalo_session"
 ZALO_ACCOUNTS_FILE = APP_DATA_DIR / "zalo_accounts.json"
 
 # Server settings
-API_HOST = "0.0.0.0"
-API_PORT = 8000
-DEBUG = True
+API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_PORT = int(os.getenv("API_PORT", "8000"))
+DEBUG = os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 # CORS settings
 # Thêm origins bổ sung qua env var ALLOWED_ORIGINS (phân cách bằng dấu phẩy)

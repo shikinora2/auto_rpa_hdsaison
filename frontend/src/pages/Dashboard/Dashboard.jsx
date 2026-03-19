@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Card,
     Form,
@@ -38,7 +38,7 @@ const TASK_LABELS = {
     add_friends: 'Kết bạn Zalo',
 };
 
-function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, onHeadlessChange, sessionStatus, onVerifySession, onSessionUpdate, rpaStatus, qrImage }) {
+function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySession, onSessionUpdate, rpaStatus, qrImage }) {
     const [form] = Form.useForm();
     const [loggingIn, setLoggingIn] = useState(false);
 
@@ -48,14 +48,106 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     const [localQrBase64, setLocalQrBase64] = useState(null);
     const pollRef = useRef(null);
 
+    const loadConfig = useCallback(async () => {
+        try {
+            const { data } = await configAPI.get();
+            form.setFieldsValue({
+                username: data.username || '',
+                password: '',
+            });
+        } catch (error) {
+            console.error('Failed to load config:', error);
+        }
+    }, [form]);
+
+    const stopSessionPolling = useCallback(() => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    }, []);
+
+    const syncQrFromCache = useCallback(async () => {
+        try {
+            const { data: qrData } = await zaloAPI.getQR();
+            if (qrData.qr_base64) {
+                setLocalQrBase64(qrData.qr_base64);
+            }
+            if (qrData.is_running && (qrData.current_task === 'zalo_login' || qrData.current_task === 'login')) {
+                setZaloLoading(true);
+            }
+        } catch (error) {
+            console.debug('Failed to sync cached Zalo QR:', error);
+        }
+    }, []);
+
+    const startSessionPolling = useCallback(() => {
+        stopSessionPolling();
+        pollRef.current = setInterval(async () => {
+            try {
+                const { data } = await zaloAPI.getSession();
+                if (data.is_active) {
+                    setZaloSession(data);
+                    setZaloLoading(false);
+                    setLocalQrBase64(null);
+                    stopSessionPolling();
+                    return;
+                }
+
+                if (data.is_running && (data.current_task === 'zalo_login' || data.current_task === 'login')) {
+                    setZaloLoading(true);
+                    await syncQrFromCache();
+                } else {
+                    setZaloLoading(false);
+                }
+            } catch (error) {
+                console.debug('Zalo polling failed:', error);
+            }
+        }, 3000);
+    }, [stopSessionPolling, syncQrFromCache]);
+
+    const loadZaloSession = useCallback(async () => {
+        try {
+            const { data } = await zaloAPI.getSession();
+            setZaloSession(data);
+            if (!data.is_active) {
+                await syncQrFromCache();
+
+                if (!data.is_running) {
+                    setZaloLoading(true);
+                    try {
+                        await zaloAPI.login();
+                        startSessionPolling();
+                        await syncQrFromCache();
+                    } catch (err) {
+                        if (err?.response?.status === 400 && /Another Zalo task is running/i.test(err?.response?.data?.detail || '')) {
+                            setZaloLoading(true);
+                            startSessionPolling();
+                            await syncQrFromCache();
+                        } else {
+                            setZaloLoading(false);
+                        }
+                    }
+                } else if (data.current_task === 'zalo_login' || data.current_task === 'login') {
+                    setZaloLoading(true);
+                    startSessionPolling();
+                    await syncQrFromCache();
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load Zalo session:', error);
+        }
+    }, [startSessionPolling, syncQrFromCache]);
+
     useEffect(() => {
         loadConfig();
-    }, []);
+    }, [loadConfig]);
 
     useEffect(() => {
         if (!taskStatus) return;
         const task = taskStatus.data?.task;
         const st = taskStatus.status;
+        const isZaloTask = task === 'zalo_login' || task === 'zalo_session' || task === 'send_messages' || task === 'add_friends';
         if (task === 'login' && (st === 'completed' || st === 'error')) {
             setLoggingIn(false);
         }
@@ -71,23 +163,11 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
             stopSessionPolling();
             loadZaloSession();
         }
-        if (st === 'completed' || st === 'error' || st === 'stopping') {
+        if (isZaloTask && (st === 'completed' || st === 'error' || st === 'stopping')) {
             setZaloLoading(false);
             stopSessionPolling();
         }
-    }, [taskStatus]);
-
-    const loadConfig = async () => {
-        try {
-            const { data } = await configAPI.get();
-            form.setFieldsValue({
-                username: data.username || '',
-                password: '',
-            });
-        } catch (error) {
-            console.error('Failed to load config:', error);
-        }
-    };
+    }, [taskStatus, loadZaloSession, stopSessionPolling]);
 
     const handleLoginAndSave = async () => {
         try {
@@ -125,69 +205,6 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
         }
     };
 
-    const handlePause = async () => {
-        // Moved to App.jsx header
-    };
-
-    const handleStop = async () => {
-        // Moved to App.jsx header
-    };
-
-    // ─── Zalo helpers ─────────────────────────────────────────
-    const startSessionPolling = () => {
-        stopSessionPolling();
-        pollRef.current = setInterval(async () => {
-            try {
-                const { data } = await zaloAPI.getSession();
-                if (data.is_active) {
-                    setZaloSession(data);
-                    setZaloLoading(false);
-                    stopSessionPolling();
-                }
-            } catch { /* ignore */ }
-        }, 3000);
-    };
-
-    const stopSessionPolling = () => {
-        if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-        }
-    };
-
-    const loadZaloSession = async () => {
-        try {
-            const { data } = await zaloAPI.getSession();
-            setZaloSession(data);
-            if (!data.is_active) {
-                // Try fetch cached QR image immediately (for page reload scenario)
-                try {
-                    const { data: qrData } = await zaloAPI.getQR();
-                    if (qrData.qr_base64) {
-                        setLocalQrBase64(qrData.qr_base64);
-                    }
-                } catch { /* ignore */ }
-                // Auto-start login task if nothing is running
-                if (!data.is_running) {
-                    setZaloLoading(true);
-                    try {
-                        await zaloAPI.login();
-                    } catch (err) {
-                        // 400 = another task running, ignore silently
-                        if (err?.response?.status !== 400) {
-                            setZaloLoading(false);
-                        }
-                    }
-                } else if (data.current_task === 'zalo_login') {
-                    // A login task is already running — just reflect that in UI
-                    setZaloLoading(true);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load Zalo session:', error);
-        }
-    };
-
     const handleZaloLogin = async () => {
         setZaloLoading(true);
         try {
@@ -195,6 +212,13 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
             message.info('Đang mở trình duyệt Zalo, vui lòng quét mã QR');
             startSessionPolling();
         } catch (error) {
+            if (error?.response?.status === 400 && /Another Zalo task is running/i.test(error?.response?.data?.detail || '')) {
+                message.info('Tác vụ đăng nhập Zalo đang chạy, đang đồng bộ lại mã QR...');
+                setZaloLoading(true);
+                await syncQrFromCache();
+                startSessionPolling();
+                return;
+            }
             message.error(error.response?.data?.detail || 'Không thể đăng nhập Zalo');
             setZaloLoading(false);
         }
@@ -214,7 +238,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     useEffect(() => {
         loadZaloSession();
         return () => stopSessionPolling();
-    }, []);
+    }, [loadZaloSession, stopSessionPolling]);
 
     // Sync WebSocket-pushed QR to local state
     useEffect(() => {
@@ -345,7 +369,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                             </div>
 
                             {/* QR code hiển thị khi đang chờ đăng nhập */}
-                            {zaloLoading && localQrBase64 && (
+                            {!zaloSession.is_active && localQrBase64 && (
                                 <div className="zalo-qr-wrapper">
                                     <div className="zalo-qr-label">Quét mã QR bằng ứng dụng Zalo</div>
                                     <img

@@ -85,27 +85,42 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      try { const { data } = await configAPI.get(); setHeadless(data.headless || false); } catch {}
-      try { const { data } = await rpaAPI.getStatus(); setRpaStatus(data); } catch {}
+      try { const { data } = await configAPI.get(); setHeadless(data.headless || false); } catch (error) { console.debug('Failed to load config:', error); }
+      try { const { data } = await rpaAPI.getStatus(); setRpaStatus(data); } catch (error) { console.debug('Failed to load RPA status:', error); }
       try {
         const { data } = await rpaAPI.checkSession();
         setSessionStatus({ is_logged_in: data.is_logged_in, checking: false });
-      } catch { setSessionStatus({ is_logged_in: false, checking: false }); }
+      } catch (error) {
+        console.debug('Failed to check session:', error);
+        setSessionStatus({ is_logged_in: false, checking: false });
+      }
     })();
   }, []);
 
-  useEffect(() => {
-    if (!taskStatus) return;
-    const task = taskStatus.data?.task;
+  const liveRpaStatus = (() => {
+    if (!taskStatus) return rpaStatus;
     const st = taskStatus.status;
-    if (st === 'running' || st === 'paused') setRpaStatus({ is_running: true, is_paused: st === 'paused' });
-    if (st === 'completed' || st === 'error' || st === 'stopping') setRpaStatus({ is_running: false, is_paused: false });
-    if (task === 'login' && st === 'completed') setSessionStatus({ is_logged_in: true, checking: false });
-  }, [taskStatus]);
+    if (st === 'running' || st === 'paused') {
+      return { is_running: true, is_paused: st === 'paused' };
+    }
+    if (st === 'completed' || st === 'error' || st === 'stopping') {
+      return { is_running: false, is_paused: false };
+    }
+    return rpaStatus;
+  })();
+
+  const liveSessionStatus =
+    taskStatus?.data?.task === 'login' && taskStatus.status === 'completed'
+      ? { is_logged_in: true, checking: false }
+      : sessionStatus;
 
   const handleHeadlessToggle = async (val) => {
     setHeadless(val);
-    try { await configAPI.update({ headless: val }); } catch {}
+    try {
+      await configAPI.update({ headless: val });
+    } catch (error) {
+      console.debug('Failed to save headless setting:', error);
+    }
   };
 
   const handleVerifySession = async () => {
@@ -121,29 +136,33 @@ function App() {
   const handlePause = async () => {
     try {
       if (isZaloTask) {
-        if (rpaStatus.is_paused) { await zaloAPI.resume(); message.info('Đã tiếp tục tác vụ Zalo'); }
+        if (liveRpaStatus.is_paused) { await zaloAPI.resume(); message.info('Đã tiếp tục tác vụ Zalo'); }
         else { await zaloAPI.pause(); message.warning('Đã tạm dừng tác vụ Zalo'); }
         // rpaStatus được cập nhật tự động qua WebSocket broadcast từ backend
       } else {
-        if (rpaStatus.is_paused) { await rpaAPI.resume(); message.info('Đã tiếp tục tác vụ'); }
+        if (liveRpaStatus.is_paused) { await rpaAPI.resume(); message.info('Đã tiếp tục tác vụ'); }
         else { await rpaAPI.pause(); message.warning('Đã tạm dừng tác vụ'); }
         const { data } = await rpaAPI.getStatus();
         setRpaStatus(data);
       }
-    } catch {}
+    } catch (error) {
+      console.debug('Pause/resume failed:', error);
+    }
   };
 
   const handleStop = async () => {
     try {
       if (isZaloTask) { await zaloAPI.stop(); message.warning('Đang dừng tác vụ Zalo...'); }
       else { await rpaAPI.stop(); message.warning('Đang dừng tác vụ...'); }
-    } catch {}
+    } catch (error) {
+      console.debug('Stop failed:', error);
+    }
   };
 
   const currentTaskName = TASK_LABELS[taskStatus?.data?.task] || null;
   const statusInfo = (() => {
-    if (rpaStatus.is_running) {
-      if (rpaStatus.is_paused) return { text: 'Tạm dừng' };
+    if (liveRpaStatus.is_running) {
+      if (liveRpaStatus.is_paused) return { text: 'Tạm dừng' };
       return { text: 'Đang chạy' };
     }
     return { text: 'Sẵn sàng' };
@@ -153,16 +172,16 @@ function App() {
     {
       key: 'session',
       label: 'Phiên HPO',
-      value: sessionStatus.checking ? 'Kiểm tra...' : sessionStatus.is_logged_in ? 'Đã đăng nhập' : 'Chưa đăng nhập',
+      value: liveSessionStatus.checking ? 'Kiểm tra...' : liveSessionStatus.is_logged_in ? 'Đã đăng nhập' : 'Chưa đăng nhập',
       icon: <WifiOutlined />,
-      iconClass: sessionStatus.checking ? 'warning' : sessionStatus.is_logged_in ? 'success' : 'error',
+      iconClass: liveSessionStatus.checking ? 'warning' : liveSessionStatus.is_logged_in ? 'success' : 'error',
     },
     {
       key: 'rpa',
       label: 'RPA',
       value: statusInfo.text,
       icon: <RobotOutlined />,
-      iconClass: rpaStatus.is_running ? (rpaStatus.is_paused ? 'warning' : 'success') : 'info',
+      iconClass: liveRpaStatus.is_running ? (liveRpaStatus.is_paused ? 'warning' : 'success') : 'info',
     },
     {
       key: 'task',
@@ -181,10 +200,10 @@ function App() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard
-          taskStatus={taskStatus} wsStatus={status} progress={progress}
-          headless={headless} onHeadlessChange={handleHeadlessToggle}
-          sessionStatus={sessionStatus} onVerifySession={handleVerifySession}
-          onSessionUpdate={setSessionStatus} rpaStatus={rpaStatus}
+          taskStatus={taskStatus} progress={progress}
+          headless={headless}
+          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
+          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
           qrImage={qrImage}
         />;
       case 'tasks':
@@ -195,10 +214,10 @@ function App() {
         return <SmsGateway />;
       default:
         return <Dashboard
-          taskStatus={taskStatus} wsStatus={status} progress={progress}
-          headless={headless} onHeadlessChange={handleHeadlessToggle}
-          sessionStatus={sessionStatus} onVerifySession={handleVerifySession}
-          onSessionUpdate={setSessionStatus} rpaStatus={rpaStatus}
+          taskStatus={taskStatus} progress={progress}
+          headless={headless}
+          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
+          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
           qrImage={qrImage}
         />;
     }
@@ -292,13 +311,13 @@ function App() {
                     </div>
                   </Tooltip>
                 ))}
-                {rpaStatus.is_running && (
+                {liveRpaStatus.is_running && (
                   <>
                     <div className="status-bar-divider" />
-                    <Tooltip title={rpaStatus.is_paused ? 'Tiếp tục tác vụ' : 'Tạm dừng'} placement="bottomRight">
+                    <Tooltip title={liveRpaStatus.is_paused ? 'Tiếp tục tác vụ' : 'Tạm dừng'} placement="bottomRight">
                       <Button size="small"
-                        type={rpaStatus.is_paused ? 'primary' : 'default'}
-                        icon={rpaStatus.is_paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                        type={liveRpaStatus.is_paused ? 'primary' : 'default'}
+                        icon={liveRpaStatus.is_paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
                         onClick={handlePause} className="status-bar-ctrl-btn" />
                     </Tooltip>
                     <Tooltip title="Dừng hẳn" placement="bottomRight">

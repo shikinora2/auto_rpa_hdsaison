@@ -88,7 +88,7 @@ function ConfigTab() {
       await smsAPI.saveConfig(values);
       await checkHealthStatus();
       message.success('Đã gửi yêu cầu kiểm tra.');
-    } catch (err) {
+    } catch {
       message.error('Lưu để kiểm tra gặp lỗi.');
     } finally {
       setSaving(false);
@@ -240,7 +240,7 @@ function SendTab() {
       setCustomers(rows);
       const valid = rows.filter(r => String(r.phone || '').trim());
       message.success(`Đã tải ${data.row_count} dữ liệu. Có ${valid.length} SĐT hợp lệ.`);
-    } catch (error) {
+    } catch {
       message.error('Không thể đọc file Excel');
     }
   };

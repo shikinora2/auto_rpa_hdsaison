@@ -1,29 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import {
     Card,
-    Form,
     Button,
     message,
     Table,
     Upload,
     Input,
-    Modal,
     Row,
     Col,
-    Tag,
-    Popconfirm
 } from 'antd';
 import {
-    LoginOutlined,
-    LogoutOutlined,
     SendOutlined,
     UserAddOutlined,
     UploadOutlined,
     DownloadOutlined,
-    PlusOutlined,
     DeleteOutlined,
-    TeamOutlined,
-    MessageOutlined,
     FileExcelOutlined,
 } from '@ant-design/icons';
 import { zaloAPI, filesAPI } from '../../services/api';
@@ -53,20 +44,6 @@ function Zalo({ taskStatus }) {
     });
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
-
-    const startSessionPolling = () => {
-        stopSessionPolling();
-        pollRef.current = setInterval(async () => {
-            try {
-                const { data } = await zaloAPI.getSession();
-                if (data.is_active) {
-                    setSession(data);
-                    setLoading(prev => ({ ...prev, login: false }));
-                    stopSessionPolling();
-                }
-            } catch { /* ignore */ }
-        }, 3000);
-    };
 
     const stopSessionPolling = () => {
         if (pollRef.current) {
@@ -120,29 +97,6 @@ function Zalo({ taskStatus }) {
         }
     };
 
-    const handleLogin = async () => {
-        setLoading(prev => ({ ...prev, login: true }));
-        try {
-            await zaloAPI.login();
-            message.info('Đang mở trình duyệt Zalo, vui lòng quét mã QR');
-            startSessionPolling();
-        } catch (error) {
-            message.error(error.response?.data?.detail || 'Không thể đăng nhập');
-            setLoading(prev => ({ ...prev, login: false }));
-        }
-    };
-
-    const handleLogout = async () => {
-        try {
-            stopSessionPolling();
-            await zaloAPI.logout();
-            setSession({ is_active: false });
-            message.success('Đã đăng xuất');
-        } catch (error) {
-            message.error('Không thể đăng xuất');
-        }
-    };
-
     const handleUpload = async (info) => {
         const file = info.file;
         try {
@@ -155,7 +109,7 @@ function Zalo({ taskStatus }) {
             } else {
                 message.success(`Đã tải ${data.row_count} khách hàng`);
             }
-        } catch (error) {
+        } catch {
             message.error('Không thể đọc file Excel');
         }
     };
@@ -214,7 +168,11 @@ function Zalo({ taskStatus }) {
 
         setLoading(prev => ({ ...prev, sendMessages: true }));
         try {
-            const payload = validCustomers.map(({ _key, ...rest }) => rest);
+            const payload = validCustomers.map((customer) => {
+                const next = { ...customer };
+                delete next._key;
+                return next;
+            });
             await zaloAPI.sendMessages({
                 customers: payload,
                 message_template: messageTemplate,
@@ -245,7 +203,11 @@ function Zalo({ taskStatus }) {
 
         setLoading(prev => ({ ...prev, addFriends: true }));
         try {
-            const payload = validCustomers.map(({ _key, ...rest }) => rest);
+            const payload = validCustomers.map((customer) => {
+                const next = { ...customer };
+                delete next._key;
+                return next;
+            });
             await zaloAPI.addFriends({
                 customers: payload,
                 greeting_template: messageTemplate

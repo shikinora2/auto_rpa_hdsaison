@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     Card,
     Form,
@@ -45,10 +45,33 @@ function Tasks({ taskStatus, progress }) {
     const [sessionStatus, setSessionStatus] = useState(null);
     const [currentTask, setCurrentTask] = useState(null);
 
+    const checkSession = useCallback(async () => {
+        // Fast path: trả về trạng thái cache, không mở browser (dùng khi trang load)
+        try {
+            const { data } = await rpaAPI.checkSession();
+            setSessionStatus(data.is_logged_in);
+        } catch (error) {
+            console.debug('Failed to check session:', error);
+            setSessionStatus(false);
+        }
+    }, []);
+
+    const loadConfig = useCallback(async () => {
+        try {
+            const { data } = await configAPI.get();
+            form.setFieldsValue({
+                save_directory: data.save_directory || '',
+                save_format: data.save_format || 'PDF',
+            });
+        } catch (error) {
+            console.error('Failed to load config:', error);
+        }
+    }, [form]);
+
     useEffect(() => {
         loadConfig();
         checkSession();
-    }, []);
+    }, [loadConfig, checkSession]);
 
     useEffect(() => {
         if (!taskStatus) return;
@@ -68,38 +91,6 @@ function Tasks({ taskStatus, progress }) {
             setCurrentTask(null);
         }
     }, [taskStatus]);
-
-    const checkSession = async () => {
-        // Fast path: trả về trạng thái cache, không mở browser (dùng khi trang load)
-        try {
-            const { data } = await rpaAPI.checkSession();
-            setSessionStatus(data.is_logged_in);
-        } catch {
-            setSessionStatus(false);
-        }
-    };
-
-    const verifySession = async () => {
-        // Slow path: kiểm tra thực tế qua Playwright (dùng khi bấm nút Kiểm tra lại)
-        try {
-            const { data } = await rpaAPI.verifySession();
-            setSessionStatus(data.is_logged_in);
-        } catch {
-            setSessionStatus(false);
-        }
-    };
-
-    const loadConfig = async () => {
-        try {
-            const { data } = await configAPI.get();
-            form.setFieldsValue({
-                save_directory: data.save_directory || '',
-                save_format: data.save_format || 'PDF',
-            });
-        } catch (error) {
-            console.error('Failed to load config:', error);
-        }
-    };
 
     const getFormData = () => {
         const values = form.getFieldsValue();

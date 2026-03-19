@@ -12,11 +12,12 @@ export function useWebSocket() {
     const [status, setStatus] = useState('disconnected'); // disconnected, connecting, connected
     const [progress, setProgress] = useState(null); // { current, total, percentage, message }
     const [taskStatus, setTaskStatus] = useState(null); // { status, task, data }
-    const [qrImage, setQrImage] = useState(null); // { qr_base64, account_id }
+    const [qrImage, setQrImage] = useState(null); // { qr_base64 }
 
     const wsRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     const pingIntervalRef = useRef(null);
+    const reconnectFnRef = useRef(() => {});
 
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -44,7 +45,16 @@ export function useWebSocket() {
 
                     switch (data.type) {
                         case 'log':
-                            setLogs(prev => [...prev.slice(-999), data]); // Giữ tối đa 1000 logs
+                            setLogs(prev => {
+                                const last = prev[prev.length - 1];
+                                const isDup = last
+                                    && last.type === data.type
+                                    && last.timestamp === data.timestamp
+                                    && last.level === data.level
+                                    && last.message === data.message;
+                                if (isDup) return prev;
+                                return [...prev.slice(-999), data]; // Giữ tối đa 1000 logs
+                            });
                             break;
 
                         case 'history':
@@ -65,7 +75,7 @@ export function useWebSocket() {
                             break;
 
                         case 'qr_image':
-                            setQrImage({ qr_base64: data.qr_base64, account_id: data.account_id });
+                            setQrImage({ qr_base64: data.qr_base64 });
                             break;
 
                         default:
@@ -86,7 +96,7 @@ export function useWebSocket() {
 
                 // Auto reconnect sau 3 giây
                 reconnectTimeoutRef.current = setTimeout(() => {
-                    connect();
+                    reconnectFnRef.current();
                 }, 3000);
             };
 
@@ -101,10 +111,14 @@ export function useWebSocket() {
 
             // Retry sau 5 giây
             reconnectTimeoutRef.current = setTimeout(() => {
-                connect();
+                reconnectFnRef.current();
             }, 5000);
         }
     }, []);
+
+    useEffect(() => {
+        reconnectFnRef.current = connect;
+    }, [connect]);
 
     const disconnect = useCallback(() => {
         clearTimeout(reconnectTimeoutRef.current);

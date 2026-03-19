@@ -2,7 +2,7 @@
 WebSocket Connection Manager
 Quản lý các kết nối WebSocket và broadcast log messages
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import WebSocket
 import asyncio
 import json
@@ -15,12 +15,15 @@ class ConnectionManager:
     Thay thế function log_to_gui trong code cũ
     """
     _instance = None
+    active_connections: List[WebSocket]
+    log_history: List[Dict[str, Any]]
+    max_history: int
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.active_connections: List[WebSocket] = []
-            cls._instance.log_history: List[Dict[str, Any]] = []
+            cls._instance.active_connections = []
+            cls._instance.log_history = []
             cls._instance.max_history = 1000  # Giữ tối đa 1000 log gần nhất
         return cls._instance
     
@@ -101,13 +104,12 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
     
-    async def broadcast_qr(self, qr_base64: str, account_id: str = None):
+    async def broadcast_qr(self, qr_base64: str):
         """Broadcast QR code image (base64) cho tất cả clients"""
         entry = {
             "type": "qr_image",
             "timestamp": datetime.now().isoformat(),
             "qr_base64": qr_base64,
-            "account_id": account_id,
         }
         disconnected = []
         for connection in self.active_connections:
@@ -118,7 +120,7 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
 
-    async def broadcast_status(self, status: str, data: Dict[str, Any] = None):
+    async def broadcast_status(self, status: str, data: Optional[Dict[str, Any]] = None):
         """
         Broadcast trạng thái hệ thống
         
