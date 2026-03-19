@@ -1,0 +1,261 @@
+﻿/* =============================================
+   Zalo Page â€” Enterprise Dark v3.0
+   ============================================= */
+
+.zalo-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* =============================================
+   Card accent bars
+   ============================================= */
+.account-card .ant-card-head-title::before,
+.customer-card .ant-card-head-title::before,
+.message-card .ant-card-head-title::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+.account-card .ant-card-head-title::before {
+    background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+}
+
+.customer-card .ant-card-head-title::before {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+
+.message-card .ant-card-head-title::before {
+    background: var(--hz-brand-gradient);
+}
+
+/* =============================================
+   Account List
+   ============================================= */
+.account-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    padding-right: 2px;
+}
+
+.account-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-radius: var(--hz-radius-md);
+    border: 1px solid var(--hz-border);
+    background: var(--hz-bg-primary);
+    cursor: pointer;
+    transition: all var(--hz-transition-fast);
+    user-select: none;
+}
+
+.account-item:hover {
+    border-color: rgba(56, 189, 248, 0.35);
+    background: rgba(56, 189, 248, 0.04);
+}
+
+.account-item.selected {
+    border-color: rgba(56, 189, 248, 0.5);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.account-item-left {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.account-item-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--hz-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.account-item-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.account-item-tags .ant-tag {
+    font-size: 10px;
+    margin: 0;
+    padding: 0 5px;
+    line-height: 17px;
+}
+
+.account-empty {
+    text-align: center;
+    padding: 20px;
+    color: var(--hz-text-muted);
+    font-size: 12px;
+}
+
+/* â”€â”€ Account Footer / Login Button â”€â”€ */
+.account-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.zalo-login-btn {
+    background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%) !important;
+    border: none !important;
+    cursor: pointer;
+}
+
+.zalo-login-btn:hover {
+    background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%) !important;
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3) !important;
+}
+
+/* =============================================
+   Customer Card â€” Table
+   ============================================= */
+.customer-card .ant-card-extra .ant-btn {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+    border: none !important;
+    color: #fff !important;
+    cursor: pointer;
+}
+
+.customer-card .ant-card-extra .template-btn {
+    background: transparent !important;
+    border: 1px solid var(--hz-border-strong) !important;
+    color: var(--hz-text-secondary) !important;
+}
+
+.zalo-container .ant-table {
+    border-radius: var(--hz-radius-lg);
+    overflow: hidden;
+}
+
+.zalo-container .ant-table-thead > tr > th {
+    background: var(--hz-bg-primary) !important;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.zalo-container .ant-table-tbody > tr:hover > td {
+    background: rgba(99, 102, 241, 0.05) !important;
+}
+
+/* =============================================
+   Message Card
+   ============================================= */
+.message-card .ant-input-textarea textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.template-variable-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.template-variable-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--hz-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.template-variable-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.template-variable-btn {
+    border-radius: 999px !important;
+    border: 1px solid rgba(56, 189, 248, 0.2) !important;
+    background: rgba(56, 189, 248, 0.06) !important;
+    color: #38bdf8 !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    cursor: pointer;
+    transition: all var(--hz-transition-fast) !important;
+}
+
+.template-variable-btn:hover {
+    border-color: rgba(56, 189, 248, 0.45) !important;
+    background: rgba(56, 189, 248, 0.12) !important;
+    color: #7dd3fc !important;
+}
+
+.template-variable-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--hz-text-muted);
+}
+
+/* =============================================
+   Action Buttons
+   ============================================= */
+.zalo-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.zalo-actions .ant-btn {
+    min-width: 160px;
+    height: 44px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.send-btn {
+    background: var(--hz-brand-gradient) !important;
+    border: none !important;
+}
+.send-btn:hover {
+    background: linear-gradient(135deg, #4f46e5 0%, #818cf8 100%) !important;
+    box-shadow: var(--hz-shadow-brand) !important;
+    transform: translateY(-1px);
+}
+
+.friend-btn {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+    border: none !important;
+    color: #fff !important;
+}
+.friend-btn:hover {
+    background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%) !important;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35) !important;
+}
+
+/* =============================================
+   Responsive
+   ============================================= */
+@media (max-width: 768px) {
+    .zalo-actions {
+        flex-direction: column;
+    }
+    .zalo-actions .ant-btn {
+        width: 100%;
+        min-width: auto;
+    }
+}
+

@@ -1,0 +1,30 @@
+# Backend Dependencies for HD Saison RPA Tool
+# FastAPI + WebSocket + Async Support
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# WebSocket and Async
+websockets==12.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+
+# Data Validation
+pydantic==2.5.3
+
+# Browser Automation
+playwright==1.41.0
+
+# Excel Processing
+openpyxl==3.1.2
+
+# Google APIs
+google-api-python-client==2.115.0
+google-auth-oauthlib==1.2.0
+
+# PDF Processing
+PyMuPDF==1.23.8
+
+# Date Utilities
+python-dateutil==2.8.2

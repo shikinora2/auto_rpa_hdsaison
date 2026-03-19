@@ -1,0 +1,536 @@
+﻿/* =============================================
+   HD SAISON RPA Tool â€” App Layout v3.0
+   Enterprise Dark Design System
+   ============================================= */
+
+/* =============================================
+   Main Layout
+   ============================================= */
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  background: var(--hz-bg-base);
+}
+
+/* =============================================
+   Sidebar
+   ============================================= */
+.app-sidebar {
+  width: var(--hz-sidebar-width) !important;
+  max-width: var(--hz-sidebar-width) !important;
+  min-width: var(--hz-sidebar-width) !important;
+  flex: 0 0 var(--hz-sidebar-width) !important;
+  background: var(--hz-bg-primary) !important;
+  border-right: 1px solid var(--hz-border) !important;
+  height: 100vh;
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+/* â”€â”€ Sidebar Logo â”€â”€ */
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--hz-border);
+}
+
+.sidebar-logo-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--hz-brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: var(--hz-shadow-brand);
+}
+
+.sidebar-logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-logo-brand {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--hz-text-primary);
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+
+.sidebar-logo-sub {
+  font-size: 11px;
+  color: var(--hz-text-muted);
+  font-weight: 400;
+  letter-spacing: 0.3px;
+}
+
+/* â”€â”€ Sidebar Nav Label â”€â”€ */
+.sidebar-nav-label {
+  padding: 20px 20px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--hz-text-subtle);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/* â”€â”€ Sidebar Menu â”€â”€ */
+.sidebar-menu {
+  flex: 1;
+  padding: 0 12px;
+  background: transparent !important;
+  border: none !important;
+}
+
+.sidebar-menu .ant-menu-item {
+  height: 44px !important;
+  line-height: 44px !important;
+  margin: 3px 0 !important;
+  padding: 0 14px !important;
+  border-radius: var(--hz-radius-md) !important;
+  color: var(--hz-text-muted) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  transition: all var(--hz-transition-fast) !important;
+  cursor: pointer;
+}
+
+.sidebar-menu .ant-menu-item:hover {
+  background: rgba(148, 163, 184, 0.08) !important;
+  color: var(--hz-text-secondary) !important;
+}
+
+.sidebar-menu .ant-menu-item-selected {
+  background: rgba(99, 102, 241, 0.15) !important;
+  color: #818cf8 !important;
+}
+
+.sidebar-menu .ant-menu-item-selected .anticon {
+  color: #818cf8 !important;
+}
+
+.sidebar-menu .ant-menu-item .anticon {
+  font-size: 16px !important;
+  margin-right: 10px !important;
+  transition: color var(--hz-transition-fast) !important;
+}
+
+/* â”€â”€ Sidebar Footer â”€â”€ */
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--hz-border);
+  margin-top: auto;
+}
+
+.sidebar-version-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--hz-text-subtle);
+  font-weight: 400;
+}
+
+.sidebar-version-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--hz-success);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  flex-shrink: 0;
+  animation: pulse-green 2.5s infinite;
+}
+
+/* =============================================
+   Main Content Area
+   ============================================= */
+.app-main {
+  flex: 1;
+  margin-left: var(--hz-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--hz-bg-base);
+}
+
+/* =============================================
+   Top Header
+   ============================================= */
+.app-header {
+  background: var(--hz-bg-primary) !important;
+  border-bottom: 1px solid var(--hz-border) !important;
+  padding: 0 var(--hz-spacing-xl) !important;
+  height: var(--hz-header-height) !important;
+  line-height: normal !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-breadcrumb {
+  color: var(--hz-text-subtle);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+}
+
+.header-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--hz-text-primary);
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--hz-spacing-md);
+}
+
+.header-status-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-headless-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  cursor: pointer;
+  color: var(--hz-text-secondary);
+  font-size: 13px;
+  transition: all 0.18s;
+  user-select: none;
+}
+
+.header-headless-wrap:hover {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* â”€â”€ Connection Status â”€â”€ */
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: var(--hz-radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--hz-border);
+  background: rgba(148, 163, 184, 0.06);
+  transition: all var(--hz-transition-fast);
+}
+
+.connection-status .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: all var(--hz-transition-fast);
+  flex-shrink: 0;
+}
+
+.connection-status .status-text {
+  color: var(--hz-text-muted);
+}
+
+.connection-status.connected {
+  background: var(--hz-success-bg);
+  border-color: var(--hz-success-border);
+}
+.connection-status.connected .status-dot {
+  background: var(--hz-success);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+  animation: pulse-green 2.5s infinite;
+}
+.connection-status.connected .status-text { color: var(--hz-success); }
+
+.connection-status.disconnected {
+  background: var(--hz-error-bg);
+  border-color: var(--hz-error-border);
+}
+.connection-status.disconnected .status-dot { background: var(--hz-error); }
+.connection-status.disconnected .status-text { color: var(--hz-error); }
+
+.connection-status.connecting {
+  background: var(--hz-warning-bg);
+  border-color: var(--hz-warning-border);
+}
+.connection-status.connecting .status-dot {
+  background: var(--hz-warning);
+  animation: pulse-yellow 1.2s infinite;
+}
+.connection-status.connecting .status-text { color: var(--hz-warning); }
+
+/* =============================================
+   Content Area
+   ============================================= */
+.app-content {
+  flex: 1;
+  padding: var(--hz-spacing-xl);
+  background: transparent;
+  overflow-y: auto;
+}
+
+/* =============================================
+   Console Wrapper
+   ============================================= */
+.console-wrapper {
+  padding: 0 var(--hz-spacing-xl) var(--hz-spacing-lg);
+}
+
+/* =============================================
+   Footer
+   ============================================= */
+.app-footer {
+  text-align: center;
+  padding: var(--hz-spacing-sm) var(--hz-spacing-xl);
+  color: var(--hz-text-subtle);
+  font-size: 11px;
+  border-top: 1px solid var(--hz-border);
+}
+
+/* =============================================
+   Compact Status Bar
+   ============================================= */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  cursor: default;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+  font-size: 14px;
+}
+
+.status-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+
+.status-pill-icon {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.status-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-bar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(148, 163, 184, 0.2);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.status-bar-ctrl-btn {
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* success */
+.status-pill--success { background: var(--hz-success-bg); color: var(--hz-success); border-color: var(--hz-success-border); }
+.status-pill--success .status-pill-dot { background: var(--hz-success); box-shadow: 0 0 5px var(--hz-success); animation: pulse-dot 2s infinite; }
+
+/* warning */
+.status-pill--warning { background: var(--hz-warning-bg); color: var(--hz-warning); border-color: var(--hz-warning-border); }
+.status-pill--warning .status-pill-dot { background: var(--hz-warning); }
+
+/* error */
+.status-pill--error { background: var(--hz-error-bg); color: var(--hz-error); border-color: var(--hz-error-border); }
+.status-pill--error .status-pill-dot { background: var(--hz-error); }
+
+/* info */
+.status-pill--info { background: var(--hz-info-bg); color: var(--hz-info); border-color: var(--hz-info-border); }
+.status-pill--info .status-pill-dot { background: var(--hz-info); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* =============================================
+   Utility Classes
+   ============================================= */
+.hz-card {
+  background: var(--hz-bg-secondary);
+  border: 1px solid var(--hz-border);
+  border-radius: var(--hz-radius-xl);
+  padding: var(--hz-spacing-lg);
+  box-shadow: var(--hz-shadow-card);
+  transition: all var(--hz-transition-normal);
+}
+
+/* =============================================
+   Animation Keyframes
+   ============================================= */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+  50%       { box-shadow: 0 0 12px rgba(34, 197, 94, 0.8); }
+}
+
+@keyframes pulse-yellow {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+/* =============================================
+   Responsive Design
+   ============================================= */
+@media (max-width: 1024px) {
+  .app-sidebar {
+    width: var(--hz-sidebar-collapsed-width) !important;
+    max-width: var(--hz-sidebar-collapsed-width) !important;
+    min-width: var(--hz-sidebar-collapsed-width) !important;
+    flex: 0 0 var(--hz-sidebar-collapsed-width) !important;
+  }
+
+  .sidebar-logo-text,
+  .sidebar-nav-label,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .sidebar-logo {
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .sidebar-menu .ant-menu-item {
+    padding: 0 !important;
+    justify-content: center !important;
+  }
+
+  .sidebar-menu .ant-menu-item span:not(.anticon) {
+    display: none;
+  }
+
+  .app-main {
+    margin-left: var(--hz-sidebar-collapsed-width);
+  }
+}
+
+@media (max-width: 768px) {
+  .app-sidebar {
+    display: none;
+  }
+
+  .app-main {
+    margin-left: 0;
+  }
+
+  .app-header {
+    padding: var(--hz-spacing-md) !important;
+  }
+
+  .app-content {
+    padding: var(--hz-spacing-md);
+  }
+
+  .console-wrapper {
+    padding: 0 var(--hz-spacing-md) var(--hz-spacing-md);
+  }
+}
+
+/* =============================================
+   Mobile Bottom Navigation
+   ============================================= */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--hz-bg-primary);
+  border-top: 1px solid var(--hz-border);
+  padding: 8px 16px;
+  z-index: 100;
+}
+
+.mobile-nav-items {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 12px;
+  color: var(--hz-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color var(--hz-transition-fast);
+  border-radius: var(--hz-radius-md);
+}
+
+.mobile-nav-item:hover,
+.mobile-nav-item.active {
+  color: var(--hz-brand-secondary);
+}
+
+.mobile-nav-item .anticon {
+  font-size: 20px;
+}
+
+@media (max-width: 768px) {
+  .mobile-nav { display: block; }
+  .app-footer  { margin-bottom: 70px; }
+}

@@ -1,0 +1,302 @@
+﻿/* =============================================
+   Dashboard Page â€” Enterprise Dark v3.0
+   ============================================= */
+
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* =============================================
+   Global Progress Bar
+   ============================================= */
+.global-progress-bar {
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-left: 3px solid #6366f1;
+    border-radius: var(--hz-radius-lg);
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.global-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+}
+
+.global-progress-label {
+    color: var(--hz-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.global-progress-count {
+    color: #818cf8;
+    font-weight: 600;
+    font-size: 12px;
+    background: rgba(99, 102, 241, 0.12);
+    padding: 2px 8px;
+    border-radius: var(--hz-radius-full);
+}
+
+/* =============================================
+   Card title accent bars
+   ============================================= */
+.config-card,
+.control-card {
+    height: 100%;
+}
+
+.config-card .ant-card-head-title::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 16px;
+    background: var(--hz-brand-gradient);
+    border-radius: 2px;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+.control-card .ant-card-head-title::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 16px;
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    border-radius: 2px;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+/* =============================================
+   Login Form
+   ============================================= */
+.login-fields-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.login-input {
+    height: 40px;
+}
+
+.headless-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--hz-bg-primary);
+    border: 1px solid var(--hz-border);
+    border-radius: var(--hz-radius-md);
+    margin-bottom: 16px;
+}
+
+.headless-toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.headless-toggle-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--hz-text-primary);
+}
+
+.headless-toggle-desc {
+    font-size: 11px;
+    color: var(--hz-text-muted);
+    line-height: 1.4;
+    max-width: 320px;
+}
+
+/* â”€â”€ Login button â”€â”€ */
+.login-btn {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+    border: none !important;
+    cursor: pointer;
+}
+
+.login-btn:hover {
+    background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%) !important;
+    box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35) !important;
+}
+
+/* â”€â”€ Action buttons block â”€â”€ */
+.action-buttons-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.action-buttons-vertical .ant-btn {
+    height: 42px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+/* Form label tweaks */
+.dashboard-container .ant-form-item-label > label {
+    font-size: 12px;
+    color: var(--hz-text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+/* =============================================
+   RPA Status Display
+   ============================================= */
+.rpa-status-display {
+    text-align: center;
+    padding: 20px;
+    background: var(--hz-bg-primary);
+    border-radius: var(--hz-radius-lg);
+    border: 1px solid var(--hz-border);
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.rpa-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rpa-status-indicator .ant-badge-status-dot {
+    width: 10px !important;
+    height: 10px !important;
+}
+
+/* =============================================
+   Control Progress
+   ============================================= */
+.control-progress {
+    margin-bottom: 16px;
+}
+
+.control-progress-msg {
+    font-size: 11px;
+    color: var(--hz-text-muted);
+    margin-top: 5px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* =============================================
+   Control Hint
+   ============================================= */
+.control-hint {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--hz-bg-primary);
+    border-radius: var(--hz-radius-md);
+    border: 1px solid var(--hz-border);
+}
+
+.control-hint p {
+    font-size: 12px;
+    color: var(--hz-text-muted);
+    margin: 0;
+    line-height: 1.55;
+}
+
+.control-hint strong {
+    color: #818cf8;
+}
+
+/* =============================================
+   Zalo QR Code Inline
+   ============================================= */
+.zalo-qr-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: rgba(56, 189, 248, 0.06);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: var(--hz-radius-lg);
+    animation: fadeIn 0.3s ease-out;
+}
+
+.zalo-qr-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #38bdf8;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.zalo-qr-image {
+    width: 200px;
+    height: 200px;
+    border-radius: var(--hz-radius-md);
+    border: 2px solid rgba(56, 189, 248, 0.3);
+    background: #fff;
+    image-rendering: pixelated;
+}
+
+.zalo-qr-placeholder {
+    width: 200px;
+    height: 200px;
+    border-radius: var(--hz-radius-md);
+    border: 2px solid rgba(56, 189, 248, 0.2);
+    background: repeating-linear-gradient(
+        -45deg,
+        rgba(56, 189, 248, 0.04),
+        rgba(56, 189, 248, 0.04) 10px,
+        transparent 10px,
+        transparent 20px
+    );
+    animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 40px; }
+}
+
+.zalo-qr-hint {
+    font-size: 11px;
+    color: var(--hz-text-muted);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* =============================================
+   Responsive
+   ============================================= */
+@media (max-width: 768px) {
+    .rpa-status-display {
+        padding: 14px;
+    }
+
+    .login-fields-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .login-fields-row .ant-form-item {
+        margin-bottom: 12px !important;
+    }
+}

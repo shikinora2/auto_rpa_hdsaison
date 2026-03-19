@@ -55,6 +55,13 @@ env/
 ENV/
 .venv/
 
+# Environment variable files (chứa thông tin nhạy cảm)
+.env
+.env.local
+.env.production
+.env.development.local
+backend/.env
+
 # Python eggs
 *.egg
 *.egg-info/

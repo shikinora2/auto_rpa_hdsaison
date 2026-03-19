@@ -1,0 +1,29 @@
+# =============================================================
+# systemd service file cho HD Saison RPA Tool
+#
+# Cách dùng:
+#   1. Chỉnh sửa User= và WorkingDirectory= / ExecStart= cho đúng đường dẫn
+#   2. sudo cp hdsaison-rpa.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable hdsaison-rpa
+#   5. sudo systemctl start hdsaison-rpa
+#   6. sudo systemctl status hdsaison-rpa
+# =============================================================
+
+[Unit]
+Description=HD Saison RPA Tool Backend
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/auto_rpa_hdsaison/backend
+Environment="PATH=/home/ubuntu/auto_rpa_hdsaison/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/auto_rpa_hdsaison/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

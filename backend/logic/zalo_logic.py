@@ -15,8 +15,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Thư mục lưu trữ dữ liệu ứng dụng
-APP_DATA_DIR = "app_data"
+# Thư mục lưu trữ dữ liệu ứng dụng - sử dụng đường dẫn tuyệt đối từ root project
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent  # auto_rpa_hdsaison/
+APP_DATA_DIR = str(_BASE_DIR / "app_data")
 if not os.path.exists(APP_DATA_DIR):
     os.makedirs(APP_DATA_DIR)
 
@@ -59,15 +60,10 @@ class ZaloLogin:
             logger.error(f"Lỗi khi mở trang đăng nhập: {str(e)}")
             return False
     
-    def wait_for_qr_code(self, timeout=10000):
+    def wait_for_qr_code(self, timeout=3000):
         """
         Chờ mã QR xuất hiện
-        
-        Args:
-            timeout: Thời gian chờ tối đa (milliseconds)
-            
-        Returns:
-            bool: True nếu QR code xuất hiện, False nếu không
+        timeout nhỏ (3s/selector) để tránh chặn quá lâu khi user quét nhanh
         """
         try:
             logger.info("Đang chờ mã QR xuất hiện...")
@@ -90,9 +86,11 @@ class ZaloLogin:
                 except PlaywrightTimeoutError:
                     continue
             
-            # Nếu không tìm thấy QR code cụ thể, kiểm tra xem có đang ở trang login không
-            if "id.zalo.me" in self.page.url:
-                logger.warning("Chưa tìm thấy QR code cụ thể nhưng đang ở trang đăng nhập")
+            # Nếu không tìm thấy QR code cụ thể, kiểm tra URL
+            # (bao gồm cả trường hợp user đã quét rất nhanh và trang chuyển sang chat.zalo.me)
+            current = self.page.url
+            if "id.zalo.me" in current or "chat.zalo.me" in current:
+                logger.info(f"✓ Đang ở trang đăng nhập / đã redirect: {current}")
                 return True
             
             logger.warning("Không tìm thấy mã QR")
@@ -102,108 +100,85 @@ class ZaloLogin:
             logger.error(f"Lỗi khi chờ QR code: {str(e)}")
             return False
     
-    def wait_for_user_scan(self, max_wait_time=300):
+    def wait_for_user_scan(self, max_wait_time=300, on_detected=None):
         """
-        Chờ người dùng quét mã QR và đăng nhập
-        
-        Args:
-            max_wait_time: Thời gian chờ tối đa (giây), mặc định 5 phút
-            
-        Returns:
-            bool: True nếu đăng nhập thành công, False nếu timeout
+        Chờ người dùng quét mã QR và đăng nhập.
+        Xác định thành công khi URL chuyển sang chat.zalo.me.
+        on_detected được gọi ngay lập tức khi URL đổi.
         """
         try:
             logger.info(f"⏳ Vui lòng quét mã QR để đăng nhập (thời gian chờ: {max_wait_time}s)...")
-            
             start_time = time.time()
-            
+
             while time.time() - start_time < max_wait_time:
-                current_url = self.page.url
-                
-                # Kiểm tra nếu URL đã chuyển sang chat.zalo.me
-                if "chat.zalo.me" in current_url:
-                    logger.info("✓ Phát hiện chuyển hướng đến trang chat")
-                    return True
-                
-                # Kiểm tra các element báo hiệu đăng nhập thành công
                 try:
-                    # Kiểm tra có xuất hiện trang chat không
-                    if self.page.query_selector("div[class*='conv-item']"):
-                        logger.info("✓ Phát hiện giao diện chat")
+                    if "chat.zalo.me" in self.page.url:
+                        logger.info("✅ URL chuyển sang chat.zalo.me — đăng nhập thành công!")
+                        if on_detected:
+                            try:
+                                on_detected()
+                            except Exception as cb_err:
+                                logger.warning(f"on_detected callback lỗi: {cb_err}")
                         return True
-                except:
+                except Exception:
                     pass
 
-                # Chờ 1.5-2.5 giây trước khi kiểm tra lại
-                time.sleep(random.uniform(1.5, 2.5))
-                
-                # Log tiến trình mỗi 30 giây
+                time.sleep(1.5)
+
                 elapsed = int(time.time() - start_time)
                 if elapsed % 30 == 0 and elapsed > 0:
                     logger.info(f"Đang chờ đăng nhập... ({elapsed}/{max_wait_time}s)")
-            
+
             logger.error(f"⏱️ Hết thời gian chờ ({max_wait_time}s)")
             return False
-            
+
         except Exception as e:
             logger.error(f"Lỗi khi chờ người dùng quét mã: {str(e)}")
             return False
     
     def verify_login_success(self, timeout=30000):
         """
-        Xác nhận đăng nhập thành công bằng cách kiểm tra khung trò chuyện
-        
-        Args:
-            timeout: Thời gian chờ tối đa (milliseconds)
-            
-        Returns:
-            bool: True nếu đăng nhập thành công, False nếu không
+        Xác nhận đăng nhập thành công:
+        - URL là chat.zalo.me
+        - Avatar user (div.zavatar img) hoặc icon chat (i.fa-Message_28_Filled) hiển thị
         """
         try:
             logger.info("Đang xác nhận đăng nhập thành công...")
             
-            # Kiểm tra URL
             if "chat.zalo.me" not in self.page.url:
                 logger.warning(f"URL không đúng: {self.page.url}")
                 return False
             
-            # Kiểm tra khung trò chuyện (conversation list)
-            conversation_selectors = [
-                "div#conversationList",
-                "div[id='conversationList'][aria-label='grid']",
-                "div[class*='conv-item']",
+            # Ưu tiên kiểm tra avatar và icon chat — selector đặc trưng nhất
+            reliable_selectors = [
+                "div.zavatar img",
+                "i.fa.fa-Message_28_Filled",
+                "div.mmi-icon-wr",
             ]
             
-            for selector in conversation_selectors:
+            for selector in reliable_selectors:
                 try:
-                    conv_element = self.page.wait_for_selector(selector, timeout=timeout, state="visible")
-                    if conv_element:
-                        logger.info(f"✓ Đã tìm thấy khung trò chuyện (selector: {selector})")
-                        
-                        # Kiểm tra thêm: có ít nhất 1 conversation item
-                        try:
-                            items = self.page.query_selector_all("div[class*='conv-item']")
-                            logger.info(f"✓ Tìm thấy {len(items)} cuộc trò chuyện")
-                        except:
-                            pass
-                        
+                    el = self.page.wait_for_selector(selector, timeout=timeout, state="visible")
+                    if el:
+                        logger.info(f"✅ Đăng nhập xác nhận qua: {selector}")
                         return True
                 except PlaywrightTimeoutError:
                     continue
             
-            logger.error("❌ Không tìm thấy khung trò chuyện")
+            logger.error("❌ Không tìm thấy đầu hiệu đăng nhập")
             return False
             
         except Exception as e:
             logger.error(f"Lỗi khi xác nhận đăng nhập: {str(e)}")
             return False
     
-    def login(self, max_wait_time=300):
+    def login(self, max_wait_time=300, on_login_detected=None):
         """
         Quy trình đăng nhập Zalo hoàn chỉnh
         
         Args:
             max_wait_time: Thời gian chờ tối đa cho việc quét QR (giây)
+            on_login_detected: Callback gọi ngay khi phát hiện đăng nhập
             
         Returns:
             bool: True nếu đăng nhập thành công, False nếu không
@@ -224,15 +199,19 @@ class ZaloLogin:
             logger.info("📱 Vui lòng mở ứng dụng Zalo và quét mã QR để đăng nhập")
             
             # Bước 3: Chờ người dùng quét mã
-            if not self.wait_for_user_scan(max_wait_time):
+            # on_login_detected được gọi NGAY KHI phát hiện avatar/icon
+            scan_ok = self.wait_for_user_scan(max_wait_time, on_detected=on_login_detected)
+            if not scan_ok:
                 logger.error("❌ Đăng nhập không thành công (timeout hoặc lỗi)")
                 return False
 
-            # Bước 4: Xác nhận đăng nhập thành công
-            time.sleep(random.uniform(2.5, 3.5))  # Chờ trang load hoàn toàn
-            if not self.verify_login_success():
-                logger.error("❌ Xác nhận đăng nhập thất bại")
-                return False
+            # Bước 4: Nếu on_login_detected đã phát hiện thành công (selector khớp)
+            # thì bỏ qua verify vì đã chắc chắn. Nếu không (callback=None), verify lại.
+            if on_login_detected is None:
+                time.sleep(random.uniform(2.5, 3.5))
+                if not self.verify_login_success():
+                    logger.error("❌ Xác nhận đăng nhập thất bại")
+                    return False
             
             logger.info("✅ ĐĂNG NHẬP ZALO THÀNH CÔNG!")
             return True
@@ -243,22 +222,18 @@ class ZaloLogin:
     
     def check_logged_in(self):
         """
-        Kiểm tra xem đã đăng nhập chưa
-        
-        Returns:
-            bool: True nếu đã đăng nhập, False nếu chưa
+        Kiểm tra đã đăng nhập chưa (dùng khi kiểm tra session cũ)
+        Xác định: URL là chat.zalo.me VÀ avatar user hoặc icon chat hiển thị
         """
         try:
-            current_url = self.page.url
+            if "chat.zalo.me" not in self.page.url:
+                return False
             
-            # Kiểm tra URL
-            if "chat.zalo.me" in current_url:
-                # Kiểm tra có conversation list không
-                if self.page.query_selector("div#conversationList"):
-                    return True
-            
-            return False
-            
+            return bool(
+                self.page.query_selector("div.zavatar img") or
+                self.page.query_selector("i.fa.fa-Message_28_Filled") or
+                self.page.query_selector("div.mmi-icon-wr")
+            )
         except Exception as e:
             logger.error(f"Lỗi khi kiểm tra trạng thái đăng nhập: {str(e)}")
             return False
@@ -385,7 +360,7 @@ class ZaloSessionManager:
             logger.error(f"Lỗi khi tạo persistent context: {str(e)}")
             raise
     
-    def login_with_session(self, max_wait_time=300, headless=False):
+    def login_with_session(self, max_wait_time=300, headless=False, force_relogin=False, on_login_detected=None):
         """
         Đăng nhập Zalo với session persistence và hỗ trợ headless mode
         
@@ -397,6 +372,7 @@ class ZaloSessionManager:
         Args:
             max_wait_time: Thời gian chờ tối đa cho việc quét QR (giây)
             headless: Chạy headless mode hay không (mặc định False)
+            force_relogin: Xóa cookie cũ và bắt buộc hiển thị QR quét lại (mặc định False)
 
         Returns:
             tuple: (success: bool, playwright_instance, context, page)
@@ -405,8 +381,8 @@ class ZaloSessionManager:
             # KHÔNG dùng with để context không tự động đóng
             p = sync_playwright().start()
 
-            # Bước 1: Thử kết nối với headless (hoặc non-headless nếu user chọn)
-            logger.info(f"Bước 1: Tạo context với headless={headless}")
+            # Bước 1: Tạo context (luôn non-headless để quét QR)
+            logger.info(f"Bước 1: Tạo context với headless={headless}, force_relogin={force_relogin}")
             context = self.create_persistent_context(p, headless=headless)
 
             # Lấy page đầu tiên hoặc tạo mới
@@ -415,26 +391,37 @@ class ZaloSessionManager:
             else:
                 page = context.new_page()
 
+            # Nếu force_relogin: xóa toàn bộ cookie và storage để buộc hiện QR
+            if force_relogin:
+                logger.info("🔄 force_relogin=True: Xóa cookie cũ để bắt buộc quét QR mới...")
+                context.clear_cookies()
+                try:
+                    page.goto("about:blank")
+                    page.evaluate("localStorage.clear(); sessionStorage.clear();")
+                except Exception:
+                    pass
+
             # Tạo ZaloLogin instance
             zalo = ZaloLogin(page=page, context=context)
 
-            # Kiểm tra đã đăng nhập chưa
-            logger.info("Đang kiểm tra session...")
-            page.goto(ZaloLogin.CHAT_URL, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(random.uniform(2.5, 3.5))
+            # Kiểm tra đã đăng nhập chưa (chỉ khi không force_relogin)
+            if not force_relogin:
+                logger.info("Đang kiểm tra session...")
+                page.goto(ZaloLogin.CHAT_URL, wait_until="domcontentloaded", timeout=30000)
+                time.sleep(random.uniform(2.5, 3.5))
 
-            if zalo.check_logged_in():
-                logger.info("✅ Đã đăng nhập trước đó! Sử dụng session cũ")
-                if headless:
-                    logger.info("✅ Chạy ở chế độ headless")
+                if zalo.check_logged_in():
+                    logger.info("✅ Đã đăng nhập trước đó! Sử dụng session cũ")
+                    if headless:
+                        logger.info("✅ Chạy ở chế độ headless")
 
-                # Lưu thông tin session
-                self.save_session_info({
-                    'last_login': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'status': 'active'
-                })
+                    # Lưu thông tin session
+                    self.save_session_info({
+                        'last_login': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'status': 'active'
+                    })
 
-                return True, p, context, page
+                    return True, p, context, page
 
             # Nếu chưa đăng nhập và đang ở headless mode
             if headless:
@@ -459,7 +446,7 @@ class ZaloSessionManager:
 
             # Thực hiện đăng nhập mới
             logger.info("Session không còn hiệu lực, cần đăng nhập lại...")
-            success = zalo.login(max_wait_time)
+            success = zalo.login(max_wait_time, on_login_detected=on_login_detected)
 
             if success:
                 # Lưu thông tin session
@@ -480,6 +467,91 @@ class ZaloSessionManager:
 
         except Exception as e:
             logger.error(f"Lỗi khi đăng nhập với session: {str(e)}")
+            return False, None, None, None
+
+
+    def connect_headless_only(self):
+        """
+        Kết nối Zalo ở chế độ headless sử dụng session đã lưu.
+        KHÔNG hiện QR, KHÔNG mở browser hiện ra màn hình.
+        Dùng cho các task tự động (gửi tin, kết bạn) sau khi đã đăng nhập trước.
+
+        Returns:
+            tuple: (success: bool, playwright_instance, context, page)
+                   success=False nếu session đã hết hạn (user cần login lại)
+        """
+        p = None
+        context = None
+        try:
+            p = sync_playwright().start()
+            context = self.create_persistent_context(p, headless=True)
+            page = context.pages[0] if context.pages else context.new_page()
+
+            page.goto(ZaloLogin.CHAT_URL, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(random.uniform(2.0, 3.0))
+
+            zalo = ZaloLogin(page=page, context=context)
+            if zalo.check_logged_in():
+                logger.info("✅ [headless] Session còn hợp lệ, đã kết nối headless")
+                return True, p, context, page
+
+            logger.warning("⚠️ [headless] Session đã hết hạn, cần đăng nhập lại")
+            context.close()
+            p.stop()
+            return False, None, None, None
+
+        except Exception as e:
+            logger.error(f"Lỗi khi kết nối headless: {e}")
+            try:
+                if context:
+                    context.close()
+                if p:
+                    p.stop()
+            except Exception:
+                pass
+            return False, None, None, None
+
+    def connect_with_session(self, headless=False):
+        """
+        Kết nối Zalo sử dụng session đã lưu với chế độ hiển thị tùy chọn.
+
+        Args:
+            headless: True để chạy ẩn, False để hiện browser
+
+        Returns:
+            tuple: (success: bool, playwright_instance, context, page)
+                   success=False nếu session đã hết hạn (user cần login lại)
+        """
+        p = None
+        context = None
+        try:
+            p = sync_playwright().start()
+            context = self.create_persistent_context(p, headless=headless)
+            page = context.pages[0] if context.pages else context.new_page()
+
+            page.goto(ZaloLogin.CHAT_URL, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(random.uniform(2.0, 3.0))
+
+            zalo = ZaloLogin(page=page, context=context)
+            if zalo.check_logged_in():
+                mode = "headless" if headless else "headful"
+                logger.info(f"✅ [{mode}] Session còn hợp lệ, đã kết nối Zalo")
+                return True, p, context, page
+
+            logger.warning("⚠️ Session Zalo đã hết hạn, cần đăng nhập lại")
+            context.close()
+            p.stop()
+            return False, None, None, None
+
+        except Exception as e:
+            logger.error(f"Lỗi khi kết nối Zalo với session: {e}")
+            try:
+                if context:
+                    context.close()
+                if p:
+                    p.stop()
+            except Exception:
+                pass
             return False, None, None, None
 
 

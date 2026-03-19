@@ -5,11 +5,53 @@ Sử dụng Playwright để tương tác với Zalo Web
 import time
 import random
 import logging
+import unicodedata
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class BrowserClosedError(RuntimeError):
+    """Raised when the Playwright page/context/browser is closed during automation."""
+
+
+def is_browser_closed_error(error) -> bool:
+    """Detect Playwright errors caused by a closed page/context/browser."""
+    text = str(error).lower()
+    return any(
+        marker in text
+        for marker in [
+            "target page, context or browser has been closed",
+            "page has been closed",
+            "browser has been closed",
+            "context has been closed",
+            "trang web đã bị đóng",
+            "trình duyệt đã bị đóng",
+            "browser_closed",
+        ]
+    )
+
+
+def to_gender_pronoun(value) -> str:
+    """Convert raw gender values from Excel/data sources to anh/chị."""
+    raw_text = str(value or '').strip()
+    if not raw_text:
+        return 'anh/chị'
+
+    normalized = unicodedata.normalize('NFKD', raw_text)
+    normalized = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.lower().strip()
+
+    male_markers = {'nam', 'male', 'm', 'mr', 'anh', 'boy'}
+    female_markers = {'nu', 'female', 'f', 'ms', 'mrs', 'chi', 'girl'}
+
+    if normalized in male_markers or 'nam' in normalized or 'male' in normalized:
+        return 'anh'
+    if normalized in female_markers or 'nu' in normalized or 'female' in normalized:
+        return 'chị'
+    return 'anh/chị'
 
 
 class ZaloAutomation:
@@ -210,6 +252,8 @@ class ZaloAutomation:
             return (True, None)
 
         except Exception as e:
+            if is_browser_closed_error(e):
+                raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi tìm kiếm") from e
             logger.error(f"❌ Lỗi khi tìm kiếm: {str(e)}")
             return (False, str(e))
     
@@ -400,6 +444,8 @@ class ZaloAutomation:
             # Bước 1: Tìm và mở chat
             search_success, error_msg = self.search_and_open_chat(phone_number)
             if not search_success:
+                if is_browser_closed_error(error_msg):
+                    raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi mở chat")
                 # Trả về lỗi cụ thể
                 return False, None, error_msg
 
@@ -410,11 +456,15 @@ class ZaloAutomation:
 
             # Bước 3: Gửi tin nhắn
             if not self.send_message(message):
+                if self.page.is_closed():
+                    raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi gửi tin nhắn")
                 return False, friend_status, "send_failed"
 
             logger.info(f"✅ Đã gửi tin nhắn đến {phone_number}")
             return True, friend_status, None
 
+        except BrowserClosedError:
+            raise
         except Exception as e:
             logger.error(f"Lỗi khi gửi tin nhắn đến {phone_number}: {str(e)}")
             return False, None, str(e)
@@ -715,6 +765,8 @@ class ZaloAutomation:
             return True, display_name
 
         except Exception as e:
+            if is_browser_closed_error(e):
+                raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi thêm bạn") from e
             logger.error(f"❌ Lỗi khi thêm bạn {phone_number}: {str(e)}")
             return False, None
 
@@ -761,7 +813,7 @@ class ZaloAutomation:
                 pass
     
     def send_bulk_messages(self, customer_list: list, template: str, callback=None, delay: int = 3,
-                          is_paused_func=None, check_friend_status: bool = True):
+                          is_paused_func=None, is_stop_func=None, my_name: str = "", check_friend_status: bool = True):
         """
         Gửi tin nhắn hàng loạt theo quy trình:
         1. Tìm kiếm số điện thoại
@@ -776,6 +828,8 @@ class ZaloAutomation:
             callback: Hàm callback để báo tiến trình
             delay: Thời gian chờ giữa các tin nhắn (giây)
             is_paused_func: Hàm kiểm tra trạng thái tạm dừng (trả về True/False)
+            is_stop_func: Hàm kiểm tra dừng hẳn (trả về True/False)
+            my_name: Tên tài khoản Zalo của người gửi (cho biến {my_name} trong template)
             check_friend_status: Có kiểm tra và ghi nhận trạng thái bạn bè/người lạ không
 
         Returns:
@@ -784,29 +838,29 @@ class ZaloAutomation:
         result = {"success": 0, "failed": 0, "errors": [], "details": []}
 
         for idx, customer in enumerate(customer_list, 1):
+            # Kiểm tra dừng hẳn
+            if is_stop_func and is_stop_func():
+                if callback:
+                    callback("🛑 Đã nhận lệnh dừng, thoát vòng gửi tin nhắn.")
+                break
+
             # Kiểm tra tạm dừng
             if is_paused_func:
-                while is_paused_func():
+                while is_paused_func() and not (is_stop_func and is_stop_func()):
                     time.sleep(random.uniform(0.4, 0.6))
 
+            if is_stop_func and is_stop_func():
+                if callback:
+                    callback("🛑 Đã nhận lệnh dừng, thoát vòng gửi tin nhắn.")
+                break
+
             try:
-                # Chuyển đổi giới tính từ Nam/Nữ sang anh/chị
-                gender_raw = customer.get('gender', '').strip()
-                gender_pronoun = ''
-                if gender_raw:
-                    gender_lower = gender_raw.lower()
-                    if 'nam' in gender_lower or 'male' in gender_lower:
-                        gender_pronoun = 'anh'
-                    elif 'nữ' in gender_lower or 'nv' in gender_lower or 'female' in gender_lower:
-                        gender_pronoun = 'chị'
-                    else:
-                        gender_pronoun = 'anh/chị'  # Mặc định nếu không xác định
-                else:
-                    gender_pronoun = 'anh/chị'  # Mặc định nếu không có giới tính
+                gender_pronoun = to_gender_pronoun(customer.get('gender', ''))
 
                 # Format tin nhắn
                 message = template.format(
                     name=customer.get('name', ''),
+                    my_name=my_name,
                     phone=customer.get('phone', ''),
                     address=customer.get('address', ''),
                     cccd=customer.get('cccd', ''),
@@ -835,6 +889,9 @@ class ZaloAutomation:
 
                 # Gửi tin nhắn với kiểm tra trạng thái
                 success, friend_status, error_msg = self.send_message_to_phone(phone, message, check_status=check_friend_status)
+
+                if is_browser_closed_error(error_msg):
+                    raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi gửi tin nhắn")
 
                 if success:
                     result['success'] += 1
@@ -897,16 +954,20 @@ class ZaloAutomation:
                     time.sleep(random_delay)
 
             except Exception as e:
+                error_str = str(e)
+                if is_browser_closed_error(e):
+                    if callback:
+                        callback("🛑 Trình duyệt đã bị đóng, dừng toàn bộ tác vụ gửi tin nhắn.")
+                    raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi gửi tin nhắn") from e
                 result['failed'] += 1
-                result['errors'].append(f"{customer.get('phone', 'N/A')}: {str(e)}")
+                result['errors'].append(f"{customer.get('phone', 'N/A')}: {error_str}")
                 if callback:
-                    callback(f"❌ [{idx}/{len(customer_list)}] Lỗi: {str(e)}")
+                    callback(f"❌ [{idx}/{len(customer_list)}] Lỗi: {error_str}")
                 result['details'].append({
                     'phone': customer.get('phone', ''),
                     'name': customer.get('name', 'N/A'),
                     'status': 'error',
                     'friend_status': None
                 })
-
         return result
 
