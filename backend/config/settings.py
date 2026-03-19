@@ -27,6 +27,10 @@ DOWNLOADS_DIR.mkdir(exist_ok=True)
 # Config file
 CONFIG_FILE = APP_DATA_DIR / "config.json"
 
+# SMS Gateway
+SMS_GATEWAY_CONFIG_FILE = APP_DATA_DIR / "sms_gateway_config.json"
+SMS_HISTORY_FILE = APP_DATA_DIR / "sms_history.json"
+
 # Zalo session
 ZALO_SESSION_DIR = APP_DATA_DIR / "zalo_session"
 ZALO_ACCOUNTS_FILE = APP_DATA_DIR / "zalo_accounts.json"

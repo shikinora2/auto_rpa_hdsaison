@@ -30,12 +30,13 @@ from config.settings import (
     DEBUG
 )
 from api.websocket.connection_manager import manager
-from api.routes import config, rpa, zalo, files
+from api.routes import config, rpa, zalo, files, sms
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
+    import shutil
     # Startup
     print("=" * 60)
     print("HD SAISON RPA Tool - Backend API v1.0.0")
@@ -43,6 +44,17 @@ async def lifespan(app: FastAPI):
     print(f"Server running at http://{API_HOST}:{API_PORT}")
     print(f"API docs at http://localhost:{API_PORT}/docs")
     print(f"WebSocket endpoint: ws://localhost:{API_PORT}/ws/logs")
+    print("=" * 60)
+    
+    print("Dọn dẹp session (Zalo & RPA) để yêu cầu đăng nhập mới...")
+    try:
+        if APP_DATA_DIR.exists():
+            for item in APP_DATA_DIR.iterdir():
+                if item.is_dir() and (item.name == "rpa_session" or item.name.startswith("zalo_session")):
+                    shutil.rmtree(item, ignore_errors=True)
+                    print(f"  - Đã xóa session cũ: {item.name}")
+    except Exception as e:
+        print(f"Lỗi khi dọn dẹp session: {e}")
     print("=" * 60)
     
     yield
@@ -76,6 +88,7 @@ app.include_router(config.router, prefix="/api/config", tags=["Config"])
 app.include_router(rpa.router, prefix="/api/rpa", tags=["RPA"])
 app.include_router(zalo.router, prefix="/api/zalo", tags=["Zalo"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
+app.include_router(sms.router, prefix="/api/sms", tags=["SMS Gateway"])
 
 
 @app.get("/")

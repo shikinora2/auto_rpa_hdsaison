@@ -31,3 +31,6 @@ python-dateutil==2.8.2
 
 # Security — Mã hóa dữ liệu nhạy cảm (password)
 cryptography>=42.0.0
+
+# HTTP Client — gọi Android SMS Gateway API
+aiohttp>=3.9.0

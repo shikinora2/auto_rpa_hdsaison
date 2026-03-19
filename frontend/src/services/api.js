@@ -56,17 +56,11 @@ export const rpaAPI = {
 
 export const zaloAPI = {
     // Session
-    getSession: (accountId) => api.get('/zalo/session', { params: accountId ? { account_id: accountId } : {} }),
-    verifySession: (accountId) => api.get('/zalo/session', { params: { ...(accountId ? { account_id: accountId } : {}), verify: true } }),
-    getQR: (accountId) => api.get('/zalo/qr', { params: accountId ? { account_id: accountId } : {} }),
-    login: (accountId) => api.post('/zalo/login', null, { params: { account_id: accountId } }),
-    logout: (accountId) => api.post('/zalo/logout', null, { params: accountId ? { account_id: accountId } : {} }),
-
-    // Accounts
-    getAccounts: () => api.get('/zalo/accounts'),
-    addAccount: (data) => api.post('/zalo/accounts', data),
-    deleteAccount: (id) => api.delete(`/zalo/accounts/${id}`),
-    setDefaultAccount: (id) => api.put(`/zalo/accounts/${id}/default`),
+    getSession: () => api.get('/zalo/session'),
+    verifySession: () => api.get('/zalo/session', { params: { verify: true } }),
+    getQR: () => api.get('/zalo/qr'),
+    login: () => api.post('/zalo/login'),
+    logout: () => api.post('/zalo/logout'),
 
     // Automation
     sendMessages: (data) => api.post('/zalo/send-messages', data),
@@ -103,6 +97,17 @@ export const filesAPI = {
     delete: (filename, directory = 'uploads') =>
         api.delete(`/files/${filename}`, { params: { directory } }),
     templateUrl: () => `${API_BASE_URL}/files/template`,
+};
+
+// ============== SMS Gateway API ==============
+
+export const smsAPI = {
+    getConfig: () => api.get('/sms/config'),
+    saveConfig: (data) => api.post('/sms/config', data),
+    send: (data) => api.post('/sms/send', data),
+    health: () => api.get('/sms/health'),
+    getMessages: (limit = 100) => api.get('/sms/messages', { params: { limit } }),
+    clearMessages: () => api.delete('/sms/messages'),
 };
 
 // ============== Health Check ==============

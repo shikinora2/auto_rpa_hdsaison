@@ -43,8 +43,6 @@ const TEMPLATE_VARIABLES = [
 ];
 
 function Zalo({ taskStatus }) {
-    const [accounts, setAccounts] = useState([]);
-    const [selectedAccount, setSelectedAccount] = useState(null);
     const [session, setSession] = useState({ is_active: false });
     const [customers, setCustomers] = useState([]);
     const [messageTemplate, setMessageTemplate] = useState('');
@@ -53,21 +51,14 @@ function Zalo({ taskStatus }) {
         sendMessages: false,
         addFriends: false
     });
-    const [addAccountModal, setAddAccountModal] = useState(false);
-    const [newAccountName, setNewAccountName] = useState('');
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
-    // Ref để luôn có giá trị selectedAccount mới nhất trong các callback và interval
-    const selectedAccountRef = useRef(selectedAccount);
-    useEffect(() => {
-        selectedAccountRef.current = selectedAccount;
-    }, [selectedAccount]);
 
-    const startSessionPolling = (accountId) => {
+    const startSessionPolling = () => {
         stopSessionPolling();
         pollRef.current = setInterval(async () => {
             try {
-                const { data } = await zaloAPI.getSession(accountId);
+                const { data } = await zaloAPI.getSession();
                 if (data.is_active) {
                     setSession(data);
                     setLoading(prev => ({ ...prev, login: false }));
@@ -85,18 +76,9 @@ function Zalo({ taskStatus }) {
     };
 
     useEffect(() => {
-        loadAccounts();
+        loadSession();
         return () => stopSessionPolling();
     }, []);
-
-    useEffect(() => {
-        stopSessionPolling(); // Dừng polling tài khoản cũ khi đổi tài khoản
-        if (!selectedAccount) {
-            setSession({ is_active: false });
-            return;
-        }
-        loadSession(selectedAccount);
-    }, [selectedAccount]);
 
     useEffect(() => {
         if (!taskStatus) return;
@@ -107,7 +89,7 @@ function Zalo({ taskStatus }) {
         if (task === 'zalo_session' && st === 'active') {
             setLoading(prev => ({ ...prev, login: false }));
             stopSessionPolling();
-            loadSession(selectedAccountRef.current);
+            loadSession();
             return;
         }
 
@@ -115,7 +97,7 @@ function Zalo({ taskStatus }) {
         if (task === 'zalo_session' && st === 'session_state') {
             setLoading(prev => ({ ...prev, login: false }));
             stopSessionPolling();
-            loadSession(selectedAccountRef.current);
+            loadSession();
             return;
         }
 
@@ -125,62 +107,25 @@ function Zalo({ taskStatus }) {
         }
         // Gọi loadSession sau cả completed lẫn error để đảm bảo đồng bộ
         if (task === 'zalo_login' && (st === 'completed' || st === 'error')) {
-            loadSession(selectedAccountRef.current);
+            loadSession();
         }
     }, [taskStatus]);
 
-    const loadAccounts = async () => {
+    const loadSession = async () => {
         try {
-            const { data } = await zaloAPI.getAccounts();
-            setAccounts(data.accounts || []);
-            const defaultAcc = data.accounts?.find(a => a.is_default);
-            if (defaultAcc) setSelectedAccount(defaultAcc.id);
-        } catch (error) {
-            console.error('Failed to load accounts:', error);
-        }
-    };
-
-    const loadSession = async (accountId = selectedAccount) => {
-        try {
-            const { data } = await zaloAPI.getSession(accountId);
+            const { data } = await zaloAPI.getSession();
             setSession(data);
         } catch (error) {
             console.error('Failed to load session:', error);
         }
     };
 
-    const handleAddAccount = async () => {
-        if (!newAccountName.trim()) {
-            message.warning('Vui lòng nhập tên tài khoản');
-            return;
-        }
-        try {
-            await zaloAPI.addAccount({ name: newAccountName });
-            message.success('Đã thêm tài khoản');
-            setAddAccountModal(false);
-            setNewAccountName('');
-            loadAccounts();
-        } catch (error) {
-            message.error('Không thể thêm tài khoản');
-        }
-    };
-
-    const handleDeleteAccount = async (id) => {
-        try {
-            await zaloAPI.deleteAccount(id);
-            message.success('Đã xóa tài khoản');
-            loadAccounts();
-        } catch (error) {
-            message.error('Không thể xóa tài khoản');
-        }
-    };
-
     const handleLogin = async () => {
         setLoading(prev => ({ ...prev, login: true }));
         try {
-            await zaloAPI.login(selectedAccount);
+            await zaloAPI.login();
             message.info('Đang mở trình duyệt Zalo, vui lòng quét mã QR');
-            startSessionPolling(selectedAccount);
+            startSessionPolling();
         } catch (error) {
             message.error(error.response?.data?.detail || 'Không thể đăng nhập');
             setLoading(prev => ({ ...prev, login: false }));
@@ -190,7 +135,7 @@ function Zalo({ taskStatus }) {
     const handleLogout = async () => {
         try {
             stopSessionPolling();
-            await zaloAPI.logout(selectedAccount);
+            await zaloAPI.logout();
             setSession({ is_active: false });
             message.success('Đã đăng xuất');
         } catch (error) {
@@ -271,7 +216,6 @@ function Zalo({ taskStatus }) {
         try {
             const payload = validCustomers.map(({ _key, ...rest }) => rest);
             await zaloAPI.sendMessages({
-                account_id: selectedAccount,
                 customers: payload,
                 message_template: messageTemplate,
                 check_friend_status: true
@@ -303,7 +247,6 @@ function Zalo({ taskStatus }) {
         try {
             const payload = validCustomers.map(({ _key, ...rest }) => rest);
             await zaloAPI.addFriends({
-                account_id: selectedAccount,
                 customers: payload,
                 greeting_template: messageTemplate
             });
@@ -338,76 +281,8 @@ function Zalo({ taskStatus }) {
     return (
         <div className="zalo-container">
             <Row gutter={[24, 24]}>
-                {/* Quản lý tài khoản */}
-                <Col xs={24} lg={8}>
-                    <Card title="Quản lý tài khoản" className="account-card">
-                        <div className="account-list">
-                            {accounts.length === 0 && (
-                                <div className="account-empty">Chưa có tài khoản nào</div>
-                            )}
-                            {accounts.map(acc => (
-                                <div
-                                    key={acc.id}
-                                    className={`account-item${selectedAccount === acc.id ? ' selected' : ''}`}
-                                    onClick={() => setSelectedAccount(acc.id)}
-                                >
-                                    <div className="account-item-left">
-                                        <span className="account-item-name">{acc.name}</span>
-                                        <div className="account-item-tags">
-                                            {acc.is_default && <Tag color="blue">Mặc định</Tag>}
-                                            {selectedAccount === acc.id && (
-                                                <Tag color={session.is_active ? 'green' : 'default'}>
-                                                    {session.is_active
-                                                        ? (session.zalo_name ? session.zalo_name : 'Đã đăng nhập')
-                                                        : 'Chưa đăng nhập'}
-                                                </Tag>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <Popconfirm
-                                        title="Xóa tài khoản này?"
-                                        onConfirm={() => handleDeleteAccount(acc.id)}
-                                    >
-                                        <Button
-                                            size="small"
-                                            danger
-                                            type="text"
-                                            icon={<DeleteOutlined />}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                    </Popconfirm>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="account-footer">
-                            <Button icon={<PlusOutlined />} onClick={() => setAddAccountModal(true)} block>
-                                Thêm tài khoản
-                            </Button>
-                            {session.is_active ? (
-                                <Button danger icon={<LogoutOutlined />} onClick={handleLogout} block size="large">
-                                    Đăng xuất Zalo
-                                </Button>
-                            ) : (
-                                <Button
-                                    type="primary"
-                                    icon={<LoginOutlined />}
-                                    onClick={handleLogin}
-                                    loading={loading.login}
-                                    disabled={!selectedAccount}
-                                    block
-                                    size="large"
-                                    className="zalo-login-btn"
-                                >
-                                    Đăng nhập Zalo
-                                </Button>
-                            )}
-                        </div>
-                    </Card>
-                </Col>
-
                 {/* Dữ liệu khách hàng */}
-                <Col xs={24} lg={16}>
+                <Col xs={24}>
                     <Card
                         title={`Danh sách khách hàng${customers.length ? ` (${customers.length})` : ''}`}
                         className="customer-card"
@@ -499,20 +374,7 @@ function Zalo({ taskStatus }) {
                 </Col>
             </Row>
 
-            {/* Modal thêm tài khoản */}
-            <Modal
-                title="Thêm tài khoản Zalo"
-                open={addAccountModal}
-                onOk={handleAddAccount}
-                onCancel={() => setAddAccountModal(false)}
-            >
-                <Input
-                    placeholder="Tên tài khoản (VD: Nhân viên A)"
-                    value={newAccountName}
-                    onChange={(e) => setNewAccountName(e.target.value)}
-                    size="large"
-                />
-            </Modal>
+
         </div>
     );
 }

@@ -56,13 +56,6 @@ zalo_state = {
 }
 
 
-class ZaloAccount(BaseModel):
-    """Schema cho Zalo account"""
-    id: Optional[str] = None
-    name: str
-    phone: Optional[str] = None
-    is_default: Optional[bool] = False
-
 
 class SendMessageRequest(BaseModel):
     """Schema cho gửi tin nhắn"""
@@ -82,105 +75,26 @@ class AddFriendRequest(BaseModel):
 # ============== Account Management ==============
 
 def load_accounts() -> List[dict]:
-    """Đọc danh sách tài khoản từ file"""
-    changed = False
-    legacy_session_dir = Path(ZALO_SESSION_DIR)
-
-    if ZALO_ACCOUNTS_FILE.exists():
-        try:
-            with open(ZALO_ACCOUNTS_FILE, "r", encoding="utf-8") as f:
-                accounts = json.load(f)
-
-            assigned_session_dirs = {
-                str(acc.get("session_dir"))
-                for acc in accounts
-                if acc.get("session_dir")
-            }
-
-            for acc in accounts:
-                account_id = acc.get("id")
-                expected_session_dir = str(Path(ZALO_SESSION_DIR).parent / f"zalo_session_{account_id}") if account_id else ""
-
-                if account_id and not acc.get("session_dir"):
-                    legacy_has_data = legacy_session_dir.exists() and any(legacy_session_dir.iterdir())
-                    if str(legacy_session_dir) not in assigned_session_dirs and legacy_has_data:
-                        acc["session_dir"] = str(legacy_session_dir)
-                        assigned_session_dirs.add(str(legacy_session_dir))
-                    else:
-                        acc["session_dir"] = expected_session_dir
-                        assigned_session_dirs.add(expected_session_dir)
-                    changed = True
-
-                if "name" not in acc and acc.get("account_name"):
-                    acc["name"] = acc["account_name"]
-                    changed = True
-
-                if "account_name" not in acc and acc.get("name"):
-                    acc["account_name"] = acc["name"]
-                    changed = True
-
-            if accounts and not any(acc.get("is_default") for acc in accounts):
-                accounts[0]["is_default"] = True
-                changed = True
-
-            if changed:
-                save_accounts(accounts)
-
-            return accounts
-        except Exception as e:
-            print(f"Error loading accounts: {e}")
-    return []
-
+    """Luôn trả về 1 tài khoản mặc định duy nhất"""
+    return [{
+        "id": "default",
+        "name": "Tài khoản Zalo",
+        "is_default": True,
+        "session_dir": str(ZALO_SESSION_DIR)
+    }]
 
 def save_accounts(accounts: List[dict]) -> bool:
-    """Lưu danh sách tài khoản (atomic write — tránh corrupt khi crash)"""
-    try:
-        ZALO_ACCOUNTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-        normalized_accounts = []
-        for acc in accounts:
-            normalized = dict(acc)
-            account_id = normalized.get("id")
-            if account_id and not normalized.get("session_dir"):
-                normalized["session_dir"] = str(Path(ZALO_SESSION_DIR).parent / f"zalo_session_{account_id}")
-            if normalized.get("name") and not normalized.get("account_name"):
-                normalized["account_name"] = normalized["name"]
-            if normalized.get("account_name") and not normalized.get("name"):
-                normalized["name"] = normalized["account_name"]
-            normalized_accounts.append(normalized)
-
-        return atomic_write_json(ZALO_ACCOUNTS_FILE, normalized_accounts)
-    except Exception as e:
-        print(f"Error saving accounts: {e}")
-        return False
-
+    """Không cần lưu file accounts.json nữa"""
+    return True
 
 def get_account(account_id: Optional[str] = None) -> Optional[dict]:
-    """Lấy account theo ID hoặc account mặc định."""
-    accounts = load_accounts()
-    if not accounts:
-        return None
-
-    if account_id:
-        for acc in accounts:
-            if acc.get("id") == account_id:
-                return acc
-
-    for acc in accounts:
-        if acc.get("is_default"):
-            return acc
-
-    return accounts[0]
-
+    """Luôn trả về tài khoản mặc định."""
+    return load_accounts()[0]
 
 def get_session_manager_for_account(account_id: Optional[str] = None):
-    """Tạo ZaloSessionManager theo account được chọn."""
+    """Tạo ZaloSessionManager với thư mục mặc định duy nhất."""
     from logic.zalo_logic import ZaloSessionManager
-
-    account = get_account(account_id)
-    if account and account.get("session_dir"):
-        return account, ZaloSessionManager(session_dir=account["session_dir"])
-    return account, ZaloSessionManager()
+    return get_account(), ZaloSessionManager(session_dir=str(ZALO_SESSION_DIR))
 
 
 def persist_session_snapshot(session_manager, existing_info: Optional[dict] = None, zalo_name: str = "") -> dict:
@@ -271,98 +185,6 @@ async def resolve_session_state(account_id: Optional[str] = None, verify: bool =
     return sync_session_state(account_id)
 
 
-@router.get("/accounts")
-async def get_accounts():
-    """Lấy danh sách tài khoản Zalo"""
-    accounts = load_accounts()
-    return {"accounts": accounts}
-
-
-@router.post("/accounts")
-async def add_account(account: ZaloAccount):
-    """Thêm tài khoản Zalo mới"""
-    accounts = load_accounts()
-    
-    # Generate ID
-    import uuid
-    new_account = {
-        "id": str(uuid.uuid4())[:8],
-        "name": account.name,
-        "phone": account.phone or "",
-        "is_default": account.is_default or len(accounts) == 0,
-        "session_dir": ""
-    }
-    
-    # Nếu là default, bỏ default của các account khác
-    if new_account["is_default"]:
-        for acc in accounts:
-            acc["is_default"] = False
-    
-    accounts.append(new_account)
-    
-    if save_accounts(accounts):
-        return {"status": "success", "account": new_account}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to save account")
-
-
-@router.delete("/accounts/{account_id}")
-async def delete_account(account_id: str):
-    """Xóa tài khoản Zalo"""
-    accounts = load_accounts()
-    account_to_delete = next((acc for acc in accounts if acc.get("id") == account_id), None)
-    if not account_to_delete:
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    session_dir = account_to_delete.get("session_dir")
-    if session_dir:
-        try:
-            session_path = Path(session_dir)
-            if session_path.exists():
-                import shutil
-                shutil.rmtree(session_path)
-        except Exception as e:
-            print(f"Error deleting session dir for account {account_id}: {e}")
-
-    accounts = [acc for acc in accounts if acc.get("id") != account_id]
-    
-    # Nếu xóa account default, set account đầu tiên làm default
-    if accounts and not any(acc.get("is_default") for acc in accounts):
-        accounts[0]["is_default"] = True
-
-    if zalo_state["account_id"] == account_id:
-        zalo_state["session_active"] = False
-        zalo_state["zalo_name"] = ""
-        zalo_state["account_id"] = None
-    
-    if save_accounts(accounts):
-        return {"status": "success", "message": "Account deleted"}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to save accounts")
-
-
-@router.put("/accounts/{account_id}/default")
-async def set_default_account(account_id: str):
-    """Đặt tài khoản làm mặc định"""
-    accounts = load_accounts()
-    found = False
-    
-    for acc in accounts:
-        if acc.get("id") == account_id:
-            acc["is_default"] = True
-            found = True
-        else:
-            acc["is_default"] = False
-    
-    if not found:
-        raise HTTPException(status_code=404, detail="Account not found")
-    
-    if save_accounts(accounts):
-        return {"status": "success", "message": "Default account updated"}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to save accounts")
-
-
 # ============== Session Management ==============
 
 @router.get("/session")
@@ -440,7 +262,16 @@ async def run_zalo_login_task(account_id: Optional[str]):
 
         def do_login():
             from logic.zalo_automation import ZaloAutomation
-            account, session_manager = get_session_manager_for_account(account_id)
+            import shutil
+            
+            # Xóa session cũ trước khi tạo context mới để bắt buộc đăng nhập lại
+            if ZALO_SESSION_DIR.exists():
+                try:
+                    shutil.rmtree(ZALO_SESSION_DIR)
+                except Exception:
+                    pass
+
+            account, session_manager = get_session_manager_for_account()
 
             # ── Mở browser headless để lấy QR ──────────────────────────────
             p = sync_playwright().start()
@@ -460,18 +291,25 @@ async def run_zalo_login_task(account_id: Optional[str]):
             except Exception:
                 pass
 
-            # Đợi QR canvas xuất hiện rồi broadcast
-            qr_selectors = ["canvas#qrcode", "canvas[class*='qrcode']", "div[class*='qr'] canvas"]
+            # Đợi QR canvas/img xuất hiện rồi broadcast
+            qr_selectors = [
+                "div.qrcode img",
+                "div.qr-container img",
+                "img[src*='data:image/png;base64']",
+                "canvas#qrcode", 
+                "canvas[class*='qrcode']", 
+                "div[class*='qr'] canvas"
+            ]
             for selector in qr_selectors:
                 try:
                     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
                     el = page.wait_for_selector(selector, timeout=15000, state="visible")
                     if el:
-                        # Tăng kích thước canvas lên 300x300 bằng JS
+                        # Tăng kích thước canvas/img lên 300x300 bằng JS để chất lượng ảnh cao
                         try:
                             page.evaluate(f"""
                                 (function() {{
-                                    var c = document.querySelector('{selector}');
+                                    var c = document.querySelector("{selector}");
                                     if (c) {{ c.style.width = '300px'; c.style.height = '300px'; }}
                                 }})();
                             """)

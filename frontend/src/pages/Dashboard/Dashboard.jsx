@@ -13,6 +13,7 @@ import {
     Tag,
     Popconfirm,
     Modal,
+    Alert,
 } from 'antd';
 import {
     UserOutlined,
@@ -42,16 +43,10 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     const [loggingIn, setLoggingIn] = useState(false);
 
     // ─── Zalo state ───────────────────────────────────────────
-    const [accounts, setAccounts] = useState([]);
-    const [selectedAccount, setSelectedAccount] = useState(null);
     const [zaloSession, setZaloSession] = useState({ is_active: false });
     const [zaloLoading, setZaloLoading] = useState(false);
     const [localQrBase64, setLocalQrBase64] = useState(null);
-    const [addAccountModal, setAddAccountModal] = useState(false);
-    const [newAccountName, setNewAccountName] = useState('');
     const pollRef = useRef(null);
-    const selectedAccountRef = useRef(null);
-    useEffect(() => { selectedAccountRef.current = selectedAccount; }, [selectedAccount]);
 
     useEffect(() => {
         loadConfig();
@@ -68,13 +63,13 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
             setZaloLoading(false);
             setLocalQrBase64(null);
             stopSessionPolling();
-            loadZaloSession(selectedAccountRef.current);
+            loadZaloSession();
         }
         if (task === 'zalo_login' && (st === 'completed' || st === 'error')) {
             setZaloLoading(false);
             setLocalQrBase64(null);
             stopSessionPolling();
-            loadZaloSession(selectedAccountRef.current);
+            loadZaloSession();
         }
         if (st === 'completed' || st === 'error' || st === 'stopping') {
             setZaloLoading(false);
@@ -139,11 +134,11 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     };
 
     // ─── Zalo helpers ─────────────────────────────────────────
-    const startSessionPolling = (accountId) => {
+    const startSessionPolling = () => {
         stopSessionPolling();
         pollRef.current = setInterval(async () => {
             try {
-                const { data } = await zaloAPI.getSession(accountId);
+                const { data } = await zaloAPI.getSession();
                 if (data.is_active) {
                     setZaloSession(data);
                     setZaloLoading(false);
@@ -160,26 +155,14 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
         }
     };
 
-    const loadAccounts = async () => {
+    const loadZaloSession = async () => {
         try {
-            const { data } = await zaloAPI.getAccounts();
-            setAccounts(data.accounts || []);
-            const defaultAcc = data.accounts?.find(a => a.is_default);
-            if (defaultAcc) setSelectedAccount(defaultAcc.id);
-        } catch (error) {
-            console.error('Failed to load Zalo accounts:', error);
-        }
-    };
-
-    const loadZaloSession = async (accountId) => {
-        if (!accountId) return;
-        try {
-            const { data } = await zaloAPI.getSession(accountId);
+            const { data } = await zaloAPI.getSession();
             setZaloSession(data);
             if (!data.is_active) {
                 // Try fetch cached QR image immediately (for page reload scenario)
                 try {
-                    const { data: qrData } = await zaloAPI.getQR(accountId);
+                    const { data: qrData } = await zaloAPI.getQR();
                     if (qrData.qr_base64) {
                         setLocalQrBase64(qrData.qr_base64);
                     }
@@ -188,7 +171,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                 if (!data.is_running) {
                     setZaloLoading(true);
                     try {
-                        await zaloAPI.login(accountId);
+                        await zaloAPI.login();
                     } catch (err) {
                         // 400 = another task running, ignore silently
                         if (err?.response?.status !== 400) {
@@ -205,39 +188,12 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
         }
     };
 
-    const handleAddAccount = async () => {
-        if (!newAccountName.trim()) {
-            message.warning('Vui lòng nhập tên tài khoản');
-            return;
-        }
-        try {
-            await zaloAPI.addAccount({ name: newAccountName });
-            message.success('Đã thêm tài khoản');
-            setAddAccountModal(false);
-            setNewAccountName('');
-            loadAccounts();
-        } catch {
-            message.error('Không thể thêm tài khoản');
-        }
-    };
-
-    const handleDeleteAccount = async (id) => {
-        try {
-            await zaloAPI.deleteAccount(id);
-            message.success('Đã xóa tài khoản');
-            if (selectedAccount === id) setSelectedAccount(null);
-            loadAccounts();
-        } catch {
-            message.error('Không thể xóa tài khoản');
-        }
-    };
-
     const handleZaloLogin = async () => {
         setZaloLoading(true);
         try {
-            await zaloAPI.login(selectedAccount);
+            await zaloAPI.login();
             message.info('Đang mở trình duyệt Zalo, vui lòng quét mã QR');
-            startSessionPolling(selectedAccount);
+            startSessionPolling();
         } catch (error) {
             message.error(error.response?.data?.detail || 'Không thể đăng nhập Zalo');
             setZaloLoading(false);
@@ -247,7 +203,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     const handleZaloLogout = async () => {
         try {
             stopSessionPolling();
-            await zaloAPI.logout(selectedAccount);
+            await zaloAPI.logout();
             setZaloSession({ is_active: false });
             message.success('Đã đăng xuất Zalo');
         } catch {
@@ -256,27 +212,16 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
     };
 
     useEffect(() => {
-        loadAccounts();
+        loadZaloSession();
         return () => stopSessionPolling();
     }, []);
 
-    useEffect(() => {
-        stopSessionPolling();
-        setLocalQrBase64(null);
-        if (!selectedAccount) {
-            setZaloSession({ is_active: false });
-            setZaloLoading(false);
-            return;
-        }
-        loadZaloSession(selectedAccount);
-    }, [selectedAccount]);
-
     // Sync WebSocket-pushed QR to local state
     useEffect(() => {
-        if (qrImage && qrImage.account_id === selectedAccount && qrImage.qr_base64) {
+        if (qrImage && qrImage.qr_base64) {
             setLocalQrBase64(qrImage.qr_base64);
         }
-    }, [qrImage, selectedAccount]);
+    }, [qrImage]);
 
     const currentTaskName = TASK_LABELS[taskStatus?.data?.task] || null;
 
@@ -380,45 +325,25 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                         className="account-card"
                         style={{ height: '100%' }}
                     >
-                        <div className="account-list">
-                            {accounts.length === 0 && (
-                                <div className="account-empty">Chưa có tài khoản nào</div>
-                            )}
-                            {accounts.map(acc => (
-                                <div
-                                    key={acc.id}
-                                    className={`account-item${selectedAccount === acc.id ? ' selected' : ''}`}
-                                    onClick={() => setSelectedAccount(acc.id)}
-                                >
-                                    <div className="account-item-left">
-                                        <span className="account-item-name">{acc.name}</span>
-                                        <div className="account-item-tags">
-                                            {acc.is_default && <Tag color="blue">Mặc định</Tag>}
-                                            {selectedAccount === acc.id && (
-                                                <Tag color={zaloSession.is_active ? 'green' : 'default'}>
-                                                    {zaloSession.is_active
-                                                        ? (zaloSession.zalo_name ? zaloSession.zalo_name : 'Đã đăng nhập')
-                                                        : 'Chưa đăng nhập'}
-                                                </Tag>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <Popconfirm
-                                        title="Xóa tài khoản này?"
-                                        onConfirm={() => handleDeleteAccount(acc.id)}
-                                    >
-                                        <Button
-                                            size="small"
-                                            danger
-                                            type="text"
-                                            icon={<DeleteOutlined />}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                    </Popconfirm>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="account-footer">
+                        <div className="account-footer" style={{ padding: '24px 16px' }}>
+                            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                                {zaloSession.is_active ? (
+                                    <Alert
+                                        message="Kết nối Zalo thành công"
+                                        description={`Đang hoạt động với tên: ${zaloSession.zalo_name}`}
+                                        type="success"
+                                        showIcon
+                                    />
+                                ) : (
+                                    <Alert
+                                        message="Zalo hiện chưa đăng nhập"
+                                        description="Vui lòng bấm nút bên dưới và quét mã QR để bắt đầu gửi tin hoặc kết bạn."
+                                        type="info"
+                                        showIcon
+                                    />
+                                )}
+                            </div>
+
                             {/* QR code hiển thị khi đang chờ đăng nhập */}
                             {zaloLoading && localQrBase64 && (
                                 <div className="zalo-qr-wrapper">
@@ -438,9 +363,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                                     <div className="zalo-qr-hint">Vui lòng chờ trong giây lát</div>
                                 </div>
                             )}
-                            <Button icon={<PlusOutlined />} onClick={() => setAddAccountModal(true)} block>
-                                Thêm tài khoản
-                            </Button>
+
                             {zaloSession.is_active ? (
                                 <Button danger icon={<LogoutOutlined />} onClick={handleZaloLogout} block size="large">
                                     Đăng xuất Zalo
@@ -451,7 +374,6 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                                     icon={<LoginOutlined />}
                                     onClick={handleZaloLogin}
                                     loading={zaloLoading}
-                                    disabled={!selectedAccount}
                                     block
                                     size="large"
                                     className="zalo-login-btn"
@@ -464,19 +386,7 @@ function Dashboard({ taskStatus, wsStatus = 'disconnected', progress, headless, 
                 </Col>
             </Row>
 
-            <Modal
-                title="Thêm tài khoản Zalo"
-                open={addAccountModal}
-                onOk={handleAddAccount}
-                onCancel={() => setAddAccountModal(false)}
-            >
-                <Input
-                    placeholder="Tên tài khoản (VD: Nhân viên A)"
-                    value={newAccountName}
-                    onChange={(e) => setNewAccountName(e.target.value)}
-                    size="large"
-                />
-            </Modal>
+
         </div>
     );
 }

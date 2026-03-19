@@ -1,79 +1,271 @@
-.sms-gateway-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  padding: 48px 24px;
-}
+/* ================================================
+   SMS Gateway Page — Dark Theme
+   ================================================ */
 
-.sms-gateway-coming-soon {
+.sms-gateway-page {
+  padding: 0;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  text-align: center;
-  background: #1e293b;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 20px;
-  padding: 56px 64px;
-  max-width: 520px;
-  width: 100%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  gap: 0;
 }
 
-.sms-gateway-icon-wrap {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: rgba(99, 102, 241, 0.12);
-  border: 2px solid rgba(99, 102, 241, 0.3);
+/* ── Header ── */
+.sms-gateway-header {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
 }
 
-.sms-gateway-main-icon {
-  font-size: 40px;
+.sms-gateway-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sms-gateway-title-icon {
+  font-size: 32px;
   color: #818cf8;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 10px;
+  border-radius: 10px;
 }
 
 .sms-gateway-title {
-  font-size: 28px;
+  margin: 0 !important;
+  font-size: 20px;
   font-weight: 700;
   color: #f8fafc;
-  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
 .sms-gateway-subtitle {
-  font-size: 16px;
+  margin: 2px 0 0;
   color: #94a3b8;
-  margin-top: -4px;
+  font-size: 13px;
 }
 
-.sms-gateway-badges {
+/* ── Tabs ── */
+.sms-gateway-tabs .ant-tabs-nav {
+  margin-bottom: 0 !important;
+}
+
+.sms-gateway-tabs .ant-tabs-tab {
+  border-radius: 8px 8px 0 0 !important;
+}
+
+.sms-tab-label {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.sms-badge {
-  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 14px;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 20px;
   font-size: 13px;
+}
+
+/* ── Tab content container ── */
+.sms-tab-content {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 0 8px 8px 8px;
+  padding: 24px;
+}
+
+/* ── Section header ── */
+.sms-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 20px;
+}
+
+.sms-section-icon {
   color: #818cf8;
+  font-size: 18px;
+}
+
+/* ── Info alert ── */
+.sms-info-alert {
+  margin-bottom: 20px !important;
+  border-radius: 8px !important;
+  background: rgba(56, 189, 248, 0.06) !important;
+  border-color: rgba(56, 189, 248, 0.2) !important;
+}
+
+.sms-info-alert ol {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.sms-info-alert a {
+  color: #818cf8;
+}
+
+/* ── Config form ── */
+.sms-config-form .ant-form-item-label label {
+  color: #cbd5e1 !important;
+  font-size: 13px;
+}
+
+.sms-form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sms-form-item-flex {
+  flex: 1;
+}
+
+.sms-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ── Health result ── */
+.sms-health-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
   font-weight: 500;
 }
 
-.sms-gateway-desc {
-  font-size: 14px;
+.sms-health-ok {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #4ade80;
+}
+
+.sms-health-error {
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #f87171;
+}
+
+/* ── Send form ── */
+.sms-send-form .ant-form-item-label label {
+  color: #cbd5e1 !important;
+  font-size: 13px;
+}
+
+.sms-phones-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #cbd5e1;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.sms-phones-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sms-phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sms-phone-remove {
+  flex-shrink: 0;
+}
+
+.sms-msg-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.sms-char-count {
+  font-size: 12px;
   color: #64748b;
-  line-height: 1.7;
-  margin-top: 4px;
+  font-weight: normal;
+}
+
+.sms-char-count.warn {
+  color: #f59e0b;
+}
+
+.sms-multipart {
+  margin-left: 4px;
+  color: #f59e0b;
+}
+
+/* ── History tab ── */
+.sms-history-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sms-history-summary {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.sms-history-table .ant-table {
+  background: transparent !important;
+}
+
+.sms-history-table .ant-table-thead>tr>th {
+  background: rgba(15, 23, 42, 0.5) !important;
+  color: #94a3b8 !important;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12) !important;
+}
+
+.sms-history-table .ant-table-tbody>tr>td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.06) !important;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.sms-history-table .ant-table-tbody>tr:hover>td {
+  background: rgba(99, 102, 241, 0.06) !important;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .sms-tab-content {
+    padding: 16px;
+  }
+
+  .sms-form-row {
+    flex-direction: column;
+  }
+
+  .sms-gateway-header {
+    padding: 14px 16px;
+  }
+
+  .sms-gateway-title {
+    font-size: 16px;
+  }
+
+  .sms-form-actions {
+    flex-direction: column;
+  }
 }
