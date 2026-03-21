@@ -24,6 +24,11 @@ _qr_cache: dict | None = None
 _QR_TTL = 600  # giây
 
 
+def _is_zalo_login_task(task_name: str | None) -> bool:
+    """Chuẩn hóa nhận diện task đăng nhập Zalo (hỗ trợ tên cũ và mới)."""
+    return task_name in {"zalo_login", "login"}
+
+
 def _cache_qr(qr_b64: str):
     global _qr_cache
     _qr_cache = {"qr_base64": qr_b64, "ts": time.time()}
@@ -35,7 +40,7 @@ def _get_cached_qr() -> str | None:
         return None
 
     # Khi task login đang chạy, luôn giữ QR cache để FE không mất ảnh giữa chừng
-    if zalo_state.get("is_running") and zalo_state.get("current_task") == "login":
+    if zalo_state.get("is_running") and _is_zalo_login_task(zalo_state.get("current_task")):
         return entry["qr_base64"]
 
     if time.time() - entry["ts"] < _QR_TTL:
@@ -193,7 +198,10 @@ async def login_zalo(background_tasks: BackgroundTasks):
     """
     if zalo_state["is_running"]:
         raise HTTPException(status_code=400, detail="Another Zalo task is running")
-    
+
+    # Mỗi lần yêu cầu đăng nhập mới phải xoá QR cũ để FE không hiển thị ảnh stale sau F5.
+    _clear_qr_cache()
+
     zalo_state["is_running"] = True
     zalo_state["current_task"] = "zalo_login"
     zalo_state["stop_requested"] = False
@@ -202,21 +210,30 @@ async def login_zalo(background_tasks: BackgroundTasks):
     
     return {
         "status": "started",
-        "message": "Đang mở trình duyệt Zalo, vui lòng quét mã QR"
+        "message": "Đang khởi tạo đăng nhập Zalo chạy ngầm, vui lòng quét mã QR"
     }
 
 
 async def run_zalo_login_task():
     """Background task để login Zalo.
-    Mở browser headful cho user quét QR.
+    Chạy browser headless để lấy QR mà không hiển thị trang login.
     Sau khi login thành công: lưu session vào disk, đóng browser.
     Browser KHÔNG được giữ mở — các task automation sau dùng headless per-task.
     """
     try:
-        await log_to_ws("Đang mở trình duyệt Zalo...", "info")
+        await log_to_ws("Bắt đầu luồng đăng nhập Zalo chạy ngầm (không hiển thị trình duyệt)...", "info")
         await manager.broadcast_status("running", {"task": "zalo_login"})
 
         loop = asyncio.get_running_loop()
+
+        def emit_step(message: str, level: str = "info"):
+            try:
+                asyncio.run_coroutine_threadsafe(log_to_ws(message, level), loop)
+            except Exception:
+                try:
+                    print(f"[{level.upper()}] {message}")
+                except Exception:
+                    pass
 
         def on_login_detected():
             """Gọi ngay khi phát hiện avatar/icon sau QR"""
@@ -241,13 +258,16 @@ async def run_zalo_login_task():
             from logic.zalo_automation import ZaloAutomation
 
             session_manager = get_session_manager()
+            emit_step("[B1] Khởi tạo Playwright cho đăng nhập Zalo...", "info")
 
-            # ── Mở browser HIỂN THỊ để lấy QR ổn định hơn ──────────────────
+            # ── Mở browser ẨN để không hiển thị trang login ─────────────────
             p = sync_playwright().start()
-            context = session_manager.create_persistent_context(p, headless=False)
+            context = session_manager.create_persistent_context(p, headless=True)
             page = context.pages[0] if context.pages else context.new_page()
+            emit_step("[B2] Đã tạo browser context headless thành công.", "success")
 
             # Xóa cookie cũ để buộc hiện QR mới
+            emit_step("[B3] Xóa session/cookie cũ để yêu cầu QR mới...", "info")
             context.clear_cookies()
             try:
                 page.goto("about:blank")
@@ -255,10 +275,13 @@ async def run_zalo_login_task():
             except Exception:
                 pass
 
+            emit_step("[B4] Điều hướng đến trang đăng nhập Zalo...", "info")
             try:
                 page.goto("https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F", wait_until="domcontentloaded", timeout=30000)
             except Exception:
                 pass
+
+            emit_step("[B5] Đang tìm và trích xuất QR từ DOM (không chụp full trang)...", "info")
 
             # Đợi QR canvas/img xuất hiện rồi broadcast
             qr_selectors = [
@@ -269,6 +292,37 @@ async def run_zalo_login_task():
                 "canvas[class*='qrcode']", 
                 "div[class*='qr'] canvas"
             ]
+
+            def _extract_b64_from_element(el) -> str | None:
+                try:
+                    tag_name = (el.evaluate("e => (e.tagName || '').toLowerCase()") or "").strip()
+                except Exception:
+                    tag_name = ""
+
+                # Ưu tiên lấy trực tiếp data URL để tránh lỗi screenshot trong headless
+                if tag_name == "img":
+                    try:
+                        src = el.get_attribute("src") or ""
+                        if src.startswith("data:image") and "," in src:
+                            return src.split(",", 1)[1]
+                    except Exception:
+                        pass
+
+                if tag_name == "canvas":
+                    try:
+                        data_url = el.evaluate("e => e.toDataURL('image/png')") or ""
+                        if data_url.startswith("data:image") and "," in data_url:
+                            return data_url.split(",", 1)[1]
+                    except Exception:
+                        pass
+
+                # Fallback: screenshot element
+                try:
+                    qr_bytes = el.screenshot()
+                    import base64
+                    return base64.b64encode(qr_bytes).decode()
+                except Exception:
+                    return None
 
             def _try_capture_qr() -> bool:
                 for selector in qr_selectors:
@@ -285,37 +339,68 @@ async def run_zalo_login_task():
                             """)
                         except Exception:
                             pass
-                        qr_bytes = el.screenshot()
-                        import base64
-                        qr_b64 = base64.b64encode(qr_bytes).decode()
+                        qr_b64 = _extract_b64_from_element(el)
+                        if not qr_b64:
+                            continue
                         broadcast_qr(qr_b64)
+                        emit_step(f"[B5.1] Đã lấy QR thành công từ selector: {selector}", "success")
                         return True
                     except Exception:
                         continue
 
-                # Fallback: chụp toàn trang login để FE vẫn có hình quét (tránh kẹt không ra QR)
+                # Fallback bổ sung: quét toàn bộ IMG có data URL trong DOM
                 try:
-                    current_url = page.url
-                    if "id.zalo.me" in current_url or "chat.zalo.me" in current_url:
-                        page_bytes = page.screenshot(full_page=True)
-                        import base64 as _b64
-                        broadcast_qr(_b64.b64encode(page_bytes).decode())
+                    dom_qr_b64 = page.evaluate("""
+                        () => {
+                            const img = document.querySelector("img[src^='data:image']");
+                            if (!img) return null;
+                            const src = img.getAttribute('src') || '';
+                            if (!src.includes(',')) return null;
+                            return src.split(',', 2)[1] || null;
+                        }
+                    """)
+                    if dom_qr_b64:
+                        broadcast_qr(dom_qr_b64)
+                        emit_step("[B5.1] Đã lấy QR thành công từ fallback DOM image.", "success")
                         return True
                 except Exception:
                     pass
                 return False
 
-            # Thử bắt QR nhanh trong ~20s đầu, tránh block lâu từng selector
-            first_qr_deadline = time.time() + 20
+            # Thử bắt QR nhanh trong tối đa 50s để đảm bảo tổng luồng dưới 1 phút
+            first_qr_deadline = time.time() + 50
+            first_qr_found = False
+            qr_wait_tick = 0
             while time.time() < first_qr_deadline:
                 if _try_capture_qr():
+                    first_qr_found = True
                     break
-                time.sleep(0.8)
+                qr_wait_tick += 1
+                if qr_wait_tick % 4 == 0:
+                    try:
+                        emit_step(f"[B5.wait] Đang chờ QR render... URL hiện tại: {page.url}", "info")
+                    except Exception:
+                        emit_step("[B5.wait] Đang chờ QR render...", "info")
+                time.sleep(0.5)
+
+            if not first_qr_found:
+                emit_step("[B5.2] Không lấy được QR trong 50 giây đầu.", "warning")
+                try:
+                    context.close()
+                    p.stop()
+                except Exception:
+                    pass
+                try:
+                    session_manager.delete_session()
+                except Exception:
+                    pass
+                return False, ""
 
             # ── Chờ đăng nhập (polling URL mỗi 1.5s) ──────────────────────
+            emit_step("[B6] Đã phát QR, bắt đầu chờ người dùng quét và xác nhận đăng nhập...", "info")
             import time as _time
             start = _time.time()
-            max_wait = 300
+            max_wait = 60
             success_detected = False
             login_success_selectors = [
                 "div.zavatar img",
@@ -344,14 +429,18 @@ async def run_zalo_login_task():
                     if _is_logged_in_now():
                         on_login_detected()
                         success_detected = True
+                        emit_step("[B7] Phát hiện đăng nhập thành công sau khi quét QR.", "success")
                         break
                     # Refresh QR đều đặn nếu user chưa quét
                     elapsed = int(_time.time() - start)
                     if elapsed > 0 and elapsed % 3 == 0:
                         _try_capture_qr()
+                    if elapsed > 0 and elapsed % 10 == 0:
+                        emit_step(f"[B6.{elapsed // 10}] Vẫn đang chờ quét QR... ({elapsed}s/{max_wait}s)", "info")
 
                     # Làm mới trang login định kỳ để tránh QR bị treo/expired mà không render lại
                     if elapsed > 0 and elapsed % 45 == 0 and "chat.zalo.me" not in page.url:
+                        emit_step("[B6.refresh] Làm mới trang login để lấy QR mới do QR cũ có thể hết hạn...", "warning")
                         try:
                             page.goto("https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F", wait_until="domcontentloaded", timeout=30000)
                             _try_capture_qr()
@@ -366,6 +455,7 @@ async def run_zalo_login_task():
                 success_detected = True
 
             if not success_detected:
+                emit_step("[B8] Hết thời gian chờ quét QR (60s), kết thúc phiên login.", "error")
                 try:
                     context.close()
                     p.stop()
@@ -378,18 +468,29 @@ async def run_zalo_login_task():
                 return False, ""
 
             # ── Lấy tên Zalo, lưu session, đóng browser ───────────────────
+            emit_step("[B9] Đang lấy thông tin tài khoản và lưu session...", "info")
+            zalo_name = ""
             try:
                 automation = ZaloAutomation(page)
                 zalo_name = automation.get_my_zalo_name(session_manager)
-                persist_session_snapshot(session_manager, session_manager.get_session_info() or {}, zalo_name=zalo_name)
-            except Exception:
-                zalo_name = ""
+            except Exception as name_err:
+                emit_step(f"[B9.warn] Không lấy được tên Zalo: {name_err}", "warning")
+
+            # Luôn persist session active sau khi đã xác nhận login thành công,
+            # kể cả khi không lấy được tên tài khoản.
+            persist_session_snapshot(
+                session_manager,
+                session_manager.get_session_info() or {},
+                zalo_name=zalo_name,
+            )
 
             try:
                 context.close()
                 p.stop()
             except Exception:
                 pass
+
+            emit_step("[B10] Hoàn tất đăng nhập nền, đã đóng browser headless.", "success")
 
             return True, zalo_name
 
@@ -398,12 +499,12 @@ async def run_zalo_login_task():
         if success:
             zalo_state["session_active"] = True
             zalo_state["zalo_name"] = zalo_name
-            await log_to_ws(f"Đăng nhập thành công! Tài khoản: {zalo_name or '(không xác định)'}", "success")
+            await log_to_ws(f"Đăng nhập Zalo thành công (chạy ngầm)! Tài khoản: {zalo_name or '(không xác định)'}", "success")
             await manager.broadcast_status("completed", {"task": "zalo_login", "success": True})
         else:
             zalo_state["session_active"] = False
             zalo_state["zalo_name"] = ""
-            await log_to_ws("Đăng nhập thất bại hoặc timeout", "error")
+            await log_to_ws("Đăng nhập thất bại hoặc timeout (không lấy được QR / chưa quét trong 60s)", "error")
             await manager.broadcast_status("error", {"task": "zalo_login"})
 
     except Exception as e:

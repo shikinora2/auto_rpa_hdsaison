@@ -23,13 +23,14 @@ router = APIRouter()
 # Tránh race condition khi nhiều async request ghi đồng thời.
 _config_lock = asyncio.Lock()
 
+_ALLOWED_CONFIG_KEYS = {"username", "password", "headless", "save_format"}
+
 
 class ConfigModel(BaseModel):
     """Schema cho config"""
     username: Optional[str] = None
     password: Optional[str] = None
     headless: Optional[bool] = None
-    save_directory: Optional[str] = None
     save_format: Optional[str] = None
 
 
@@ -46,7 +47,9 @@ def _load_config_sync() -> dict:
     if raw is None:
         return DEFAULT_CONFIG.copy()
 
-    config = {**DEFAULT_CONFIG, **raw}
+    # Chỉ giữ các key hợp lệ để loại bỏ key legacy (vd: save_directory)
+    sanitized_raw = {k: v for k, v in raw.items() if k in _ALLOWED_CONFIG_KEYS}
+    config = {**DEFAULT_CONFIG, **sanitized_raw}
 
     # Giải mã password (decrypt_value tự xử lý cả plain text cũ — auto migrate)
     raw_password = config.get("password", "")
@@ -58,6 +61,10 @@ def _load_config_sync() -> dict:
         if not is_encrypted(raw_password):
             _save_config_sync(config)  # lưu lại với password đã mã hóa
 
+    # Nếu file gốc có key legacy thì ghi lại bản đã được sanitize
+    if any(k not in _ALLOWED_CONFIG_KEYS for k in raw.keys()):
+        _save_config_sync(config)
+
     return config
 
 
@@ -67,7 +74,7 @@ def _save_config_sync(config: dict) -> bool:
     Mã hóa password trước khi ghi, dùng atomic write.
     """
     try:
-        to_save = dict(config)
+        to_save = {k: v for k, v in dict(config).items() if k in _ALLOWED_CONFIG_KEYS}
         if to_save.get("password"):
             to_save["password"] = encrypt_value(to_save["password"])
         return atomic_write_json(CONFIG_FILE, to_save)
@@ -122,7 +129,6 @@ async def get_config():
     return {
         "username": config.get("username", ""),
         "headless": config.get("headless", False),
-        "save_directory": config.get("save_directory", ""),
         "save_format": config.get("save_format", "PDF"),
         "has_password": bool(config.get("password", ""))
     }
@@ -140,8 +146,6 @@ async def update_config(config_data: ConfigModel):
             current_config["password"] = config_data.password
         if config_data.headless is not None:
             current_config["headless"] = config_data.headless
-        if config_data.save_directory is not None:
-            current_config["save_directory"] = config_data.save_directory
         if config_data.save_format is not None:
             current_config["save_format"] = config_data.save_format
 

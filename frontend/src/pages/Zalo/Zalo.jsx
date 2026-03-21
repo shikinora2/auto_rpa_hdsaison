@@ -8,6 +8,7 @@ import {
     Input,
     Row,
     Col,
+    Alert,
 } from 'antd';
 import {
     SendOutlined,
@@ -44,6 +45,7 @@ function Zalo({ taskStatus }) {
     });
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
+    const isLocked = !session.is_active;
 
     const stopSessionPolling = () => {
         if (pollRef.current) {
@@ -98,6 +100,10 @@ function Zalo({ taskStatus }) {
     };
 
     const handleUpload = async (info) => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
         const file = info.file;
         try {
             const { data } = await filesAPI.parseExcel(file);
@@ -115,14 +121,26 @@ function Zalo({ taskStatus }) {
     };
 
     const handleDeleteCustomer = (key) => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
         setCustomers(prev => prev.filter(r => r._key !== key));
     };
 
     const handleDownloadTemplate = () => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
         window.open(filesAPI.templateUrl(), '_blank');
     };
 
     const insertTemplateVariable = (variable) => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
         const textarea = messageInputRef.current?.resizableTextArea?.textArea;
 
         if (!textarea) {
@@ -235,6 +253,7 @@ function Zalo({ taskStatus }) {
                     type="text"
                     icon={<DeleteOutlined />}
                     onClick={() => handleDeleteCustomer(record._key)}
+                    disabled={isLocked}
                 />
             ),
         },
@@ -242,6 +261,15 @@ function Zalo({ taskStatus }) {
 
     return (
         <div className="zalo-container">
+            {isLocked && (
+                <Alert
+                    message="Chưa đăng nhập Zalo"
+                    description="Vui lòng đăng nhập Zalo ở Trang Chủ trước. Các chức năng Auto Zalo đang bị khóa."
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                />
+            )}
             <Row gutter={[24, 24]}>
                 {/* Dữ liệu khách hàng */}
                 <Col xs={24}>
@@ -254,6 +282,7 @@ function Zalo({ taskStatus }) {
                                     icon={<DownloadOutlined />}
                                     onClick={handleDownloadTemplate}
                                     className="template-btn"
+                                    disabled={isLocked}
                                 >
                                     Tải mẫu Excel
                                 </Button>
@@ -262,8 +291,9 @@ function Zalo({ taskStatus }) {
                                     showUploadList={false}
                                     beforeUpload={() => false}
                                     onChange={handleUpload}
+                                    disabled={isLocked}
                                 >
-                                    <Button icon={<FileExcelOutlined />} type="primary">
+                                    <Button icon={<FileExcelOutlined />} type="primary" disabled={isLocked}>
                                         Tải lên danh sách
                                     </Button>
                                 </Upload>
@@ -293,6 +323,7 @@ function Zalo({ taskStatus }) {
                                         size="small"
                                         className="template-variable-btn"
                                         onClick={() => insertTemplateVariable(item.value)}
+                                        disabled={isLocked}
                                     >
                                         {item.label}
                                     </Button>
@@ -305,6 +336,7 @@ function Zalo({ taskStatus }) {
                             placeholder="Nhập nội dung tin nhắn. Sử dụng các nút {name}, {gender}, {contract_id}... để chèn nhanh thông tin khách hàng"
                             value={messageTemplate}
                             onChange={(e) => setMessageTemplate(e.target.value)}
+                            disabled={isLocked}
                         />
                         <div className="template-variable-hint">
                             Các biến sẽ được thay bằng dữ liệu từng khách hàng khi gửi hoặc kết bạn hàng loạt.
@@ -315,7 +347,7 @@ function Zalo({ taskStatus }) {
                                 icon={<SendOutlined />}
                                 onClick={handleSendMessages}
                                 loading={loading.sendMessages}
-                                disabled={!session.is_active}
+                                disabled={isLocked}
                                 size="large"
                                 className="send-btn"
                             >
@@ -325,7 +357,7 @@ function Zalo({ taskStatus }) {
                                 icon={<UserAddOutlined />}
                                 onClick={handleAddFriends}
                                 loading={loading.addFriends}
-                                disabled={!session.is_active}
+                                disabled={isLocked}
                                 size="large"
                                 className="friend-btn"
                             >

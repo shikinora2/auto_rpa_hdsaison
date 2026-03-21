@@ -111,27 +111,14 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
             const { data } = await zaloAPI.getSession();
             setZaloSession(data);
             if (!data.is_active) {
-                await syncQrFromCache();
+                setLocalQrBase64(null);
 
-                if (!data.is_running) {
-                    setZaloLoading(true);
-                    try {
-                        await zaloAPI.login();
-                        startSessionPolling();
-                        await syncQrFromCache();
-                    } catch (err) {
-                        if (err?.response?.status === 400 && /Another Zalo task is running/i.test(err?.response?.data?.detail || '')) {
-                            setZaloLoading(true);
-                            startSessionPolling();
-                            await syncQrFromCache();
-                        } else {
-                            setZaloLoading(false);
-                        }
-                    }
-                } else if (data.current_task === 'zalo_login' || data.current_task === 'login') {
+                if (data.is_running && (data.current_task === 'zalo_login' || data.current_task === 'login')) {
                     setZaloLoading(true);
                     startSessionPolling();
                     await syncQrFromCache();
+                } else {
+                    setZaloLoading(false);
                 }
             }
         } catch (error) {
@@ -156,12 +143,18 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
             setLocalQrBase64(null);
             stopSessionPolling();
             loadZaloSession();
+            if (st === 'active') {
+                message.success('Đăng nhập Zalo thành công. Bạn có thể dùng các chức năng Auto Zalo.');
+            }
         }
         if (task === 'zalo_login' && (st === 'completed' || st === 'error')) {
             setZaloLoading(false);
             setLocalQrBase64(null);
             stopSessionPolling();
             loadZaloSession();
+            if (st === 'error') {
+                message.error('Đăng nhập Zalo thất bại hoặc hết thời gian quét QR.');
+            }
         }
         if (isZaloTask && (st === 'completed' || st === 'error' || st === 'stopping')) {
             setZaloLoading(false);
@@ -206,10 +199,13 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     };
 
     const handleZaloLogin = async () => {
+        stopSessionPolling();
+        setLocalQrBase64(null);
         setZaloLoading(true);
         try {
             await zaloAPI.login();
-            message.info('Đang mở trình duyệt Zalo, vui lòng quét mã QR');
+            message.info('Đã gửi yêu cầu lấy mã QR Zalo. Vui lòng chờ mã hiển thị và quét để đăng nhập.');
+            await syncQrFromCache();
             startSessionPolling();
         } catch (error) {
             if (error?.response?.status === 400 && /Another Zalo task is running/i.test(error?.response?.data?.detail || '')) {
@@ -310,34 +306,35 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
                                 </Form.Item>
                             </div>
 
-                            <div className="action-buttons-vertical" style={{ marginTop: 16 }}>
-                                <Row gutter={8}>
-                                    <Col span={16}>
-                                        <Button
-                                            type="primary"
-                                            icon={<LoginOutlined />}
-                                            onClick={handleLoginAndSave}
-                                            loading={loggingIn}
-                                            size="large"
-                                            block
-                                            className="login-btn"
-                                        >
-                                            {loggingIn ? 'Đang đăng nhập...' : 'Đăng nhập HPO'}
-                                        </Button>
-                                    </Col>
-                                    <Col span={8}>
-                                        <Button
-                                            danger
-                                            onClick={handleLogout}
-                                            block
-                                            size="large"
-                                            icon={<LogoutOutlined />}
-                                        >
-                                            Xóa phiên
-                                        </Button>
-                                    </Col>
-                                </Row>
+                            <div className="hpo-actions-row">
+                                <Button
+                                    type="primary"
+                                    icon={<LoginOutlined />}
+                                    onClick={handleLoginAndSave}
+                                    loading={loggingIn}
+                                    size="large"
+                                    block
+                                    className="login-btn hpo-action-btn"
+                                >
+                                    {loggingIn ? 'Đang đăng nhập...' : 'Đăng nhập HPO'}
+                                </Button>
+                                <Button
+                                    danger
+                                    onClick={handleLogout}
+                                    block
+                                    size="large"
+                                    icon={<LogoutOutlined />}
+                                    className="hpo-action-btn"
+                                >
+                                    Xóa phiên
+                                </Button>
                             </div>
+
+                            {sessionStatus?.is_logged_in && !sessionStatus?.checking && (
+                                <div className="hpo-login-success-msg" role="status" aria-live="polite">
+                                    ✅ Đăng nhập HPO thành công. Bạn có thể sử dụng các chức năng ở trang Tác vụ RPA.
+                                </div>
+                            )}
                         </Form>
                     </Card>
                 </Col>

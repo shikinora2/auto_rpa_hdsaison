@@ -145,6 +145,38 @@
     cursor: pointer;
 }
 
+.hpo-actions-row {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+}
+
+.hpo-action-btn {
+    height: 44px !important;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 12px;
+}
+
+.hpo-action-btn .ant-btn-icon {
+    display: inline-flex;
+    align-items: center;
+}
+
+.hpo-login-success-msg {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: var(--hz-radius-md);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    background: rgba(34, 197, 94, 0.12);
+    color: #86efac;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+}
+
 /* Form label tweaks */
 .dashboard-container .ant-form-item-label > label {
     font-size: 12px;
@@ -298,5 +330,9 @@
 
     .login-fields-row .ant-form-item {
         margin-bottom: 12px !important;
+    }
+
+    .hpo-actions-row {
+        grid-template-columns: 1fr;
     }
 }

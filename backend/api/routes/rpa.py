@@ -8,9 +8,13 @@ from typing import Optional
 import threading
 import asyncio
 import concurrent.futures
+from pathlib import Path
+import shutil
+from datetime import datetime
 
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
+from config.settings import DOWNLOADS_DIR
 
 # Thread pool cho việc chạy sync callbacks
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -43,6 +47,44 @@ class DownloadRequest(RPARequest):
     """Schema cho download request"""
     save_directory: Optional[str] = None
     save_format: Optional[str] = "PDF"  # PDF hoặc JSON
+
+
+def _resolve_save_directory(raw_path: Optional[str]) -> str:
+    """Lấy thư mục lưu hợp lệ; fallback về DOWNLOADS_DIR khi không có cấu hình."""
+    path = (raw_path or "").strip()
+    if not path:
+        path = str(DOWNLOADS_DIR)
+
+    resolved = Path(path)
+    resolved.mkdir(parents=True, exist_ok=True)
+    return str(resolved)
+
+
+def _make_month_folder_name(start_date_ddmmyyyy: str) -> str:
+    return f"{start_date_ddmmyyyy[2:4]}{start_date_ddmmyyyy[4:8]}"
+
+
+def _create_task_zip_artifact(save_directory: str, start_date_ddmmyyyy: str, task_prefix: str) -> Optional[str]:
+    """Nén thư mục kết quả theo tháng thành 1 file zip trong DOWNLOADS_DIR để FE auto-download."""
+    try:
+        month_folder = _make_month_folder_name(start_date_ddmmyyyy)
+        source_dir = Path(save_directory) / month_folder
+        if not source_dir.exists() or not source_dir.is_dir():
+            return None
+
+        # Không tạo artifact nếu thư mục rỗng
+        if not any(source_dir.iterdir()):
+            return None
+
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_stem = f"{task_prefix}_{month_folder}_{ts}"
+        zip_path_no_ext = DOWNLOADS_DIR / zip_stem
+
+        shutil.make_archive(str(zip_path_no_ext), "zip", root_dir=str(source_dir.parent), base_dir=source_dir.name)
+        return f"{zip_stem}.zip"
+    except Exception:
+        return None
 
 
 @router.get("/status")
@@ -148,14 +190,11 @@ async def download_files(request: DownloadRequest, background_tasks: BackgroundT
     username = request.username or config.get("username", "")
     password = request.password or config.get("password", "")
     headless = request.headless if request.headless is not None else config.get("headless", False)
-    save_directory = request.save_directory or config.get("save_directory", "")
+    save_directory = _resolve_save_directory(request.save_directory)
     save_format = request.save_format or config.get("save_format", "PDF")
     
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
-    
-    if not save_directory:
-        raise HTTPException(status_code=400, detail="Save directory is required")
     
     # Reset events
     rpa_state["stop_event"].clear()
@@ -206,9 +245,17 @@ async def run_download_files_task(username, password, start_date, end_date,
                 headless=headless
             )
         )
-        
+
+        artifact_filename = _create_task_zip_artifact(save_directory, start_date, "rpa_downloads")
+        if artifact_filename:
+            await log_to_ws(f"Đã tạo file tải tự động: {artifact_filename}", "success")
+
         await log_to_ws("Hoàn thành tải file", "success")
-        await manager.broadcast_status("completed", {"task": "download_files"})
+        await manager.broadcast_status("completed", {
+            "task": "download_files",
+            "artifact_filename": artifact_filename,
+            "result": result,
+        })
         
     except Exception as e:
         await log_to_ws(f"Lỗi: {str(e)}", "error")
@@ -230,7 +277,7 @@ async def scrape_details(request: DownloadRequest, background_tasks: BackgroundT
     username = request.username or config.get("username", "")
     password = request.password or config.get("password", "")
     headless = request.headless if request.headless is not None else config.get("headless", False)
-    save_directory = request.save_directory or config.get("save_directory", "")
+    save_directory = _resolve_save_directory(request.save_directory)
     
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
@@ -281,9 +328,17 @@ async def run_scrape_details_task(username, password, start_date, end_date,
                 headless=headless
             )
         )
-        
+
+        artifact_filename = _create_task_zip_artifact(save_directory, start_date, "rpa_details")
+        if artifact_filename:
+            await log_to_ws(f"Đã tạo file tải tự động: {artifact_filename}", "success")
+
         await log_to_ws("Hoàn thành cào chi tiết", "success")
-        await manager.broadcast_status("completed", {"task": "scrape_details"})
+        await manager.broadcast_status("completed", {
+            "task": "scrape_details",
+            "artifact_filename": artifact_filename,
+            "result": result,
+        })
         
     except Exception as e:
         await log_to_ws(f"Lỗi: {str(e)}", "error")

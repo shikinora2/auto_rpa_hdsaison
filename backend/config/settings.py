@@ -60,6 +60,5 @@ DEFAULT_CONFIG = {
     "username": "",
     "password": "",
     "headless": False,
-    "save_directory": str(DOWNLOADS_DIR),
     "save_format": "PDF"
 }

@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Card,
     Form,
     DatePicker,
-    Input,
     Select,
     Button,
     message,
@@ -18,11 +17,10 @@ import {
     SearchOutlined,
     DownloadOutlined,
     FileExcelOutlined,
-    FolderOpenOutlined,
     WarningOutlined,
     InfoCircleOutlined,
 } from '@ant-design/icons';
-import { configAPI, rpaAPI } from '../../services/api';
+import { configAPI, rpaAPI, filesAPI } from '../../services/api';
 import './Tasks.css';
 
 const { RangePicker } = DatePicker;
@@ -44,6 +42,7 @@ function Tasks({ taskStatus, progress }) {
     const [loading, setLoading] = useState({ check: false, download: false, scrape: false });
     const [sessionStatus, setSessionStatus] = useState(null);
     const [currentTask, setCurrentTask] = useState(null);
+    const downloadedArtifactsRef = useRef(new Set());
 
     const checkSession = useCallback(async () => {
         // Fast path: trả về trạng thái cache, không mở browser (dùng khi trang load)
@@ -60,13 +59,31 @@ function Tasks({ taskStatus, progress }) {
         try {
             const { data } = await configAPI.get();
             form.setFieldsValue({
-                save_directory: data.save_directory || '',
                 save_format: data.save_format || 'PDF',
             });
         } catch (error) {
             console.error('Failed to load config:', error);
         }
     }, [form]);
+
+    const triggerArtifactDownload = useCallback((artifactFilename) => {
+        if (!artifactFilename) return;
+
+        const uniqueKey = artifactFilename;
+        if (downloadedArtifactsRef.current.has(uniqueKey)) return;
+        downloadedArtifactsRef.current.add(uniqueKey);
+
+        const url = filesAPI.download(artifactFilename, 'downloads');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = artifactFilename;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        message.success(`Đã tạo file kết quả và bắt đầu tải về: ${artifactFilename}`);
+    }, []);
 
     useEffect(() => {
         loadConfig();
@@ -85,12 +102,17 @@ function Tasks({ taskStatus, progress }) {
             const key = TASK_MAP[task];
             if (key) setLoading(prev => ({ ...prev, [key]: false }));
             setCurrentTask(null);
+
+            const artifactFilename = taskStatus.data?.artifact_filename;
+            if (st === 'completed' && (task === 'download_files' || task === 'scrape_details') && artifactFilename) {
+                triggerArtifactDownload(artifactFilename);
+            }
         }
         if (st === 'stopping') {
             setLoading({ check: false, download: false, scrape: false });
             setCurrentTask(null);
         }
-    }, [taskStatus]);
+    }, [taskStatus, triggerArtifactDownload]);
 
     const getFormData = () => {
         const values = form.getFieldsValue();
@@ -98,14 +120,18 @@ function Tasks({ taskStatus, progress }) {
         return {
             start_date: dates[0] ? dates[0].format('DDMMYYYY') : '',
             end_date: dates[1] ? dates[1].format('DDMMYYYY') : '',
-            save_directory: values.save_directory,
             save_format: values.save_format,
         };
     };
 
     const isAnyRunning = Object.values(loading).some(Boolean);
+    const isLocked = sessionStatus !== true;
 
     const handleCheckContracts = async () => {
+        if (isLocked) {
+            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
+            return;
+        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
@@ -122,13 +148,13 @@ function Tasks({ taskStatus, progress }) {
     };
 
     const handleDownloadFiles = async () => {
+        if (isLocked) {
+            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
+            return;
+        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
-            return;
-        }
-        if (!data.save_directory) {
-            message.warning('Vui lòng nhập thư mục lưu file');
             return;
         }
         setLoading(prev => ({ ...prev, download: true }));
@@ -142,6 +168,10 @@ function Tasks({ taskStatus, progress }) {
     };
 
     const handleScrapeDetails = async () => {
+        if (isLocked) {
+            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
+            return;
+        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
@@ -163,6 +193,7 @@ function Tasks({ taskStatus, progress }) {
             {sessionStatus === false && (
                 <Alert
                     message="Chưa đăng nhập HPO — Vui lòng vào Trang Chủ để đăng nhập trước."
+                    description="Các chức năng ở trang Tác vụ RPA sẽ bị khóa cho đến khi đăng nhập thành công."
                     type="warning"
                     showIcon
                     icon={<WarningOutlined />}
@@ -205,7 +236,7 @@ function Tasks({ taskStatus, progress }) {
                 }
                 className="tasks-card"
             >
-                <Form form={form} layout="vertical" initialValues={{ save_format: 'PDF' }}>
+                <Form form={form} layout="vertical" initialValues={{ save_format: 'PDF' }} disabled={isLocked}>
                     <Row gutter={16}>
                         <Col xs={24} md={14}>
                             <Form.Item
@@ -241,24 +272,6 @@ function Tasks({ taskStatus, progress }) {
                         </Col>
                     </Row>
 
-                    <Form.Item
-                        name="save_directory"
-                        label={
-                            <span>
-                                Thư mục lưu file&nbsp;
-                                <Tooltip title="Cần thiết cho tác vụ Tải file và Cào chi tiết">
-                                    <InfoCircleOutlined style={{ color: '#707eae' }} />
-                                </Tooltip>
-                            </span>
-                        }
-                    >
-                        <Input
-                            prefix={<FolderOpenOutlined />}
-                            placeholder="VD: D:\Downloads\contracts"
-                            size="large"
-                        />
-                    </Form.Item>
-
                     {/* Task Action Cards */}
                     <Row gutter={[16, 16]} className="task-action-row">
                         <Col xs={24} sm={8}>
@@ -277,7 +290,7 @@ function Tasks({ taskStatus, progress }) {
                                     icon={loading.check ? null : <SearchOutlined />}
                                     onClick={handleCheckContracts}
                                     loading={loading.check}
-                                    disabled={isAnyRunning && !loading.check}
+                                    disabled={isLocked || (isAnyRunning && !loading.check)}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--blue"
@@ -295,14 +308,14 @@ function Tasks({ taskStatus, progress }) {
                                 <div className="task-action-info">
                                     <div className="task-action-title">Tải file PDF / JSON</div>
                                     <div className="task-action-desc">
-                                        Tải từng hợp đồng về máy theo định dạng đã chọn. Cần nhập thư mục.
+                                        Tải từng hợp đồng theo định dạng đã chọn. Hệ thống tự lưu và tự tải file kết quả.
                                     </div>
                                 </div>
                                 <Button
                                     icon={loading.download ? null : <DownloadOutlined />}
                                     onClick={handleDownloadFiles}
                                     loading={loading.download}
-                                    disabled={isAnyRunning && !loading.download}
+                                    disabled={isLocked || (isAnyRunning && !loading.download)}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--green"
@@ -320,14 +333,14 @@ function Tasks({ taskStatus, progress }) {
                                 <div className="task-action-info">
                                     <div className="task-action-title">Cào chi tiết → Excel</div>
                                     <div className="task-action-desc">
-                                        Thu thập chi tiết từng HĐ và xuất ra file Excel. Cần nhập thư mục.
+                                        Thu thập chi tiết từng HĐ và xuất Excel. Hệ thống tự lưu và tự tải file kết quả.
                                     </div>
                                 </div>
                                 <Button
                                     icon={loading.scrape ? null : <FileExcelOutlined />}
                                     onClick={handleScrapeDetails}
                                     loading={loading.scrape}
-                                    disabled={isAnyRunning && !loading.scrape}
+                                    disabled={isLocked || (isAnyRunning && !loading.scrape)}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--excel"
