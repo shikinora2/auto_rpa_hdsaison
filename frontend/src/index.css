@@ -1,5 +1,5 @@
 /* =============================================
-   HD SAISON RPA Tool
+  automation marketing
    Design System v3.0 — Enterprise Dark (OLED)
    Font: IBM Plex Sans | Palette: Slate OLED
    ============================================= */
@@ -23,7 +23,7 @@
   --hz-bg-input:     #0f172a;   /* form inputs */
   --hz-bg-overlay:   rgba(2, 6, 23, 0.6); /* modals backdrop */
 
-  /* ── Brand – Indigo (HD Saison identity) ── */
+  /* ── Brand – Indigo (automation marketing identity) ── */
   --hz-brand-primary:   #6366f1;  /* indigo-500 */
   --hz-brand-secondary: #818cf8;  /* indigo-400 */
   --hz-brand-deep:      #4f46e5;  /* indigo-600 */

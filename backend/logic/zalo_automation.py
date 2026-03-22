@@ -697,9 +697,9 @@ class ZaloAutomation:
             else:
                 # Lời chào mặc định
                 if contract_id:
-                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
+                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên automation marketing, vui lòng đồng ý kết bạn để được hỗ trợ hợp đồng {contract_id}"
                 else:
-                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên công ty tài chính HDSAISON, vui lòng đồng ý kết bạn để được hỗ trợ"
+                    greeting_message = f"Xin chào, mình là {my_zalo_name} bên automation marketing, vui lòng đồng ý kết bạn để được hỗ trợ"
 
             logger.info(f"📝 Nội dung: {greeting_message}")
 

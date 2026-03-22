@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from uuid import uuid4
 
 from main import app
 
@@ -31,3 +32,16 @@ def client():
     with TestClient(app) as test_client:
         yield test_client
     _reset_runtime_states()
+
+
+@pytest.fixture(scope="function")
+def auth_headers(client):
+    username = f"user_{uuid4().hex[:8]}"
+    password = "Pass@12345"
+    client.post(
+        "/api/auth/register",
+        json={"username": username, "password": password, "email": f"{username}@example.com"},
+    )
+    login_resp = client.post("/api/auth/login", json={"username": username, "password": password})
+    token = login_resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}

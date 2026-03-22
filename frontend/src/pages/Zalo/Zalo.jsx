@@ -4,6 +4,7 @@ import {
     Button,
     message,
     Table,
+    Tag,
     Upload,
     Input,
     Row,
@@ -34,6 +35,21 @@ const TEMPLATE_VARIABLES = [
     { label: 'Ngày sinh', value: '{dob}' },
 ];
 
+const STATUS_META = {
+    pending: { label: 'Đang chờ xử lý', color: 'processing' },
+    success: { label: 'Thành công', color: 'success' },
+    success_friend: { label: 'Đã gửi (Bạn bè)', color: 'success' },
+    success_stranger: { label: 'Đã gửi (Người lạ)', color: 'success' },
+    success_unknown: { label: 'Đã gửi', color: 'success' },
+    already_friend: { label: 'Đã là bạn bè', color: 'blue' },
+    already_sent: { label: 'Đã gửi lời mời trước', color: 'gold' },
+    not_registered: { label: 'SĐT chưa đăng ký/không cho phép tìm', color: 'orange' },
+    not_found: { label: 'Không tìm thấy', color: 'orange' },
+    failed: { label: 'Thất bại', color: 'error' },
+    error: { label: 'Lỗi', color: 'error' },
+    no_phone: { label: 'Thiếu số điện thoại', color: 'default' },
+};
+
 function Zalo({ taskStatus }) {
     const [session, setSession] = useState({ is_active: false });
     const [customers, setCustomers] = useState([]);
@@ -46,6 +62,85 @@ function Zalo({ taskStatus }) {
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
     const isLocked = !session.is_active;
+
+    const markPendingStatus = (taskType) => {
+        const pendingText = taskType === 'add_friends' ? 'Đang kết bạn...' : 'Đang nhắn tin...';
+        setCustomers(prev => prev.map(customer => (
+            String(customer.phone || '').trim()
+                ? { ...customer, taskStatus: { code: 'pending', text: pendingText } }
+                : customer
+        )));
+    };
+
+    const applyTaskResultToCustomers = (taskType, resultData) => {
+        let details = [];
+
+        if (taskType === 'send_messages') {
+            details = resultData?.results?.details || [];
+        } else if (taskType === 'add_friends') {
+            details = resultData?.results || [];
+        }
+
+        if (!Array.isArray(details) || details.length === 0) return;
+
+        const byPhone = new Map();
+        details.forEach(item => {
+            const phone = String(item?.phone || '').trim();
+            if (phone) byPhone.set(phone, item);
+        });
+
+        setCustomers(prev => prev.map(customer => {
+            const phone = String(customer.phone || '').trim();
+            if (!phone || !byPhone.has(phone)) return customer;
+
+            const item = byPhone.get(phone);
+
+            if (taskType === 'send_messages') {
+                if (item.status === 'success') {
+                    const friendStatus = item.friend_status || 'unknown';
+                    return {
+                        ...customer,
+                        taskStatus: {
+                            code: `success_${friendStatus}`,
+                            text: friendStatus === 'friend'
+                                ? 'Gửi tin thành công (Bạn bè)'
+                                : friendStatus === 'stranger'
+                                    ? 'Gửi tin thành công (Người lạ)'
+                                    : 'Gửi tin thành công'
+                        }
+                    };
+                }
+
+                return {
+                    ...customer,
+                    taskStatus: {
+                        code: item.status || 'failed',
+                        text: item.status === 'not_registered'
+                            ? 'Không thể tìm bằng số điện thoại'
+                            : item.status === 'not_found'
+                                ? 'Không tìm thấy tài khoản'
+                                : item.status === 'no_phone'
+                                    ? 'Thiếu số điện thoại'
+                                    : 'Gửi tin thất bại'
+                    }
+                };
+            }
+
+            return {
+                ...customer,
+                taskStatus: {
+                    code: item.status || 'failed',
+                    text: item.status === 'already_friend'
+                        ? 'Đã là bạn bè'
+                        : item.status === 'already_sent'
+                            ? 'Đã gửi lời mời trước đó'
+                            : item.status === 'success'
+                                ? 'Kết bạn thành công'
+                                : 'Kết bạn thất bại'
+                }
+            };
+        }));
+    };
 
     const stopSessionPolling = () => {
         if (pollRef.current) {
@@ -84,6 +179,20 @@ function Zalo({ taskStatus }) {
             setLoading({ login: false, sendMessages: false, addFriends: false });
             stopSessionPolling();
         }
+
+        if (st === 'completed' && (task === 'send_messages' || task === 'add_friends')) {
+            applyTaskResultToCustomers(task, taskStatus.data || {});
+        }
+
+        if (st === 'error' && (task === 'send_messages' || task === 'add_friends')) {
+            const taskLabel = task === 'add_friends' ? 'kết bạn' : 'nhắn tin';
+            setCustomers(prev => prev.map(customer => (
+                customer.taskStatus?.code === 'pending'
+                    ? { ...customer, taskStatus: { code: 'error', text: `Lỗi khi ${taskLabel}` } }
+                    : customer
+            )));
+        }
+
         // Gọi loadSession sau cả completed lẫn error để đảm bảo đồng bộ
         if (task === 'zalo_login' && (st === 'completed' || st === 'error')) {
             loadSession();
@@ -107,7 +216,7 @@ function Zalo({ taskStatus }) {
         const file = info.file;
         try {
             const { data } = await filesAPI.parseExcel(file);
-            const rows = (data.data || []).map((row, i) => ({ ...row, _key: i }));
+            const rows = (data.data || []).map((row, i) => ({ ...row, _key: i, taskStatus: null }));
             setCustomers(rows);
             const missing = rows.filter(r => !r.phone && !r.name && !r.contract_id);
             if (missing.length === rows.length && rows.length > 0) {
@@ -185,6 +294,7 @@ function Zalo({ taskStatus }) {
         }
 
         setLoading(prev => ({ ...prev, sendMessages: true }));
+        markPendingStatus('send_messages');
         try {
             const payload = validCustomers.map((customer) => {
                 const next = { ...customer };
@@ -220,6 +330,7 @@ function Zalo({ taskStatus }) {
         }
 
         setLoading(prev => ({ ...prev, addFriends: true }));
+        markPendingStatus('add_friends');
         try {
             const payload = validCustomers.map((customer) => {
                 const next = { ...customer };
@@ -240,8 +351,22 @@ function Zalo({ taskStatus }) {
     const customerColumns = [
         { title: 'STT', key: 'stt', width: 55, render: (_, __, i) => i + 1, align: 'center' },
         { title: 'Số điện thoại', dataIndex: 'phone', key: 'phone', width: 140 },
-        { title: 'Tên', dataIndex: 'name', key: 'name' },
+        { title: 'Tên', dataIndex: 'name', key: 'name', width: 220 },
         { title: 'Mã HĐ', dataIndex: 'contract_id', key: 'contract_id', width: 160 },
+        {
+            title: 'Trạng thái',
+            key: 'taskStatus',
+            dataIndex: 'taskStatus',
+            width: 240,
+            render: (taskStatusValue) => {
+                if (!taskStatusValue?.code) {
+                    return <span style={{ opacity: 0.65 }}>Chưa thao tác</span>;
+                }
+
+                const meta = STATUS_META[taskStatusValue.code] || STATUS_META.failed;
+                return <Tag color={meta.color}>{taskStatusValue.text || meta.label}</Tag>;
+            }
+        },
         {
             title: '',
             key: 'action',
@@ -305,7 +430,7 @@ function Zalo({ taskStatus }) {
                             dataSource={customers}
                             rowKey={(r) => r._key}
                             size="small"
-                            scroll={{ y: 420 }}
+                            scroll={{ y: 420, x: 980 }}
                             pagination={{ pageSize: 50, size: 'small', showTotal: (total) => `${total} khách hàng` }}
                         />
                     </Card>

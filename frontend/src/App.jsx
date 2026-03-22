@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ConfigProvider, Layout, Menu, theme, Switch, Tooltip, Button, message } from 'antd';
+import { ConfigProvider, Layout, Menu, theme, Switch, Tooltip, Button, message, Modal, Form, Input } from 'antd';
 import viVN from 'antd/locale/vi_VN';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -16,13 +16,15 @@ import {
   StopOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 
-import { configAPI, rpaAPI, zaloAPI } from './services/api';
+import { authAPI, configAPI, rpaAPI, zaloAPI } from './services/api';
 import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Zalo from './pages/Zalo';
 import SmsGateway from './pages/SmsGateway';
+import LoginPage from './pages/Auth/LoginPage';
 import ConsoleLog from './components/ConsoleLog';
 import { useWebSocket } from './hooks/useWebSocket';
 
@@ -75,6 +77,16 @@ const TASK_LABELS = {
 };
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('access_token')));
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('current_user') || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [changePwdForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('dashboard');
   const { logs, status, progress, taskStatus, qrImage, clearLogs } = useWebSocket();
 
@@ -84,6 +96,9 @@ function App() {
   const [rpaStatus, setRpaStatus] = useState({ is_running: false, is_paused: false });
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
     (async () => {
       try { const { data } = await configAPI.get(); setHeadless(data.headless || false); } catch (error) { console.debug('Failed to load config:', error); }
       try { const { data } = await rpaAPI.getStatus(); setRpaStatus(data); } catch (error) { console.debug('Failed to load RPA status:', error); }
@@ -95,7 +110,18 @@ function App() {
         setSessionStatus({ is_logged_in: false, checking: false });
       }
     })();
-  }, []);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    authAPI.me().catch(() => {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('current_user');
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    });
+  }, [isAuthenticated]);
 
   const liveRpaStatus = (() => {
     if (!taskStatus) return rpaStatus;
@@ -223,6 +249,43 @@ function App() {
     }
   };
 
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user || null);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('current_user');
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    message.info('Đã đăng xuất');
+  };
+
+  const handleChangePassword = async () => {
+    try {
+      const values = await changePwdForm.validateFields();
+      await authAPI.changePassword(values);
+      message.success('Đổi mật khẩu thành công, vui lòng đăng nhập lại');
+      setShowChangePassword(false);
+      changePwdForm.resetFields();
+      handleLogout();
+    } catch (error) {
+      if (!error?.errorFields) {
+        message.error(error.response?.data?.detail || 'Đổi mật khẩu thất bại');
+      }
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <ConfigProvider locale={viVN} theme={{ algorithm: theme.darkAlgorithm }}>
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      </ConfigProvider>
+    );
+  }
+
   return (
     <ConfigProvider
       locale={viVN}
@@ -267,7 +330,7 @@ function App() {
               <RobotOutlined />
             </div>
             <div className="sidebar-logo-text">
-              <span className="sidebar-logo-brand">HD SAISON</span>
+              <span className="sidebar-logo-brand">automation marketing</span>
               <span className="sidebar-logo-sub">RPA Automation</span>
             </div>
           </div>
@@ -303,6 +366,13 @@ function App() {
             </div>
             <div className="header-right">
               <div className="header-status-group">
+                <Tooltip title={currentUser?.username || 'User'} placement="bottomRight">
+                  <div className="status-pill status-pill--info" style={{ padding: '6px 10px', marginRight: 6 }}>
+                    <span className="status-pill-icon"><UserOutlined /></span>
+                  </div>
+                </Tooltip>
+                <Button size="small" onClick={() => setShowChangePassword(true)}>Đổi mật khẩu</Button>
+                <Button size="small" danger onClick={handleLogout}>Đăng xuất</Button>
                 {headerStats.map(stat => (
                   <Tooltip key={stat.key} title={<span><b>{stat.label}</b><br />{stat.value}</span>} placement="bottomRight">
                     <div className={`status-pill status-pill--${stat.iconClass}`}>
@@ -360,7 +430,7 @@ function App() {
 
           {/* Footer */}
           <footer className="app-footer">
-            © 2024 HD SAISON RPA Tool v2.0.0 - Web Edition
+            © 2024 automation marketing v2.0.0 - Web Edition
           </footer>
         </div>
 
@@ -380,6 +450,27 @@ function App() {
           </div>
         </nav>
       </Layout>
+
+      <Modal
+        title="Đổi mật khẩu"
+        open={showChangePassword}
+        onOk={handleChangePassword}
+        onCancel={() => {
+          setShowChangePassword(false);
+          changePwdForm.resetFields();
+        }}
+        okText="Lưu"
+        cancelText="Hủy"
+      >
+        <Form layout="vertical" form={changePwdForm}>
+          <Form.Item name="current_password" label="Mật khẩu hiện tại" rules={[{ required: true, min: 6 }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item name="new_password" label="Mật khẩu mới" rules={[{ required: true, min: 6 }]}>
+            <Input.Password />
+          </Form.Item>
+        </Form>
+      </Modal>
     </ConfigProvider>
   );
 }

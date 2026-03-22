@@ -2,25 +2,27 @@
 Zalo API Routes
 API endpoints cho các tính năng Zalo automation
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 import asyncio
 import concurrent.futures
 import time
 from playwright.sync_api import sync_playwright
+from datetime import datetime
 
-from config.settings import ZALO_SESSION_DIR
+from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
+from api.deps.auth import require_roles
 
 # Thread pool cho việc chạy sync Playwright (max 1 vì persistent context)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
 
-# Cache QR code duy nhất để FE có thể fetch ngay khi reload trang
-_qr_cache: dict | None = None
+# Cache QR code theo user để FE có thể fetch ngay khi reload trang
+_qr_cache_by_user: dict[int, dict] = {}
 _QR_TTL = 600  # giây
 
 
@@ -29,13 +31,12 @@ def _is_zalo_login_task(task_name: str | None) -> bool:
     return task_name in {"zalo_login", "login"}
 
 
-def _cache_qr(qr_b64: str):
-    global _qr_cache
-    _qr_cache = {"qr_base64": qr_b64, "ts": time.time()}
+def _cache_qr(user_id: int, qr_b64: str):
+    _qr_cache_by_user[user_id] = {"qr_base64": qr_b64, "ts": time.time()}
 
 
-def _get_cached_qr() -> str | None:
-    entry = _qr_cache
+def _get_cached_qr(user_id: int) -> str | None:
+    entry = _qr_cache_by_user.get(user_id)
     if not entry:
         return None
 
@@ -48,9 +49,11 @@ def _get_cached_qr() -> str | None:
     return None
 
 
-def _clear_qr_cache():
-    global _qr_cache
-    _qr_cache = None
+def _clear_qr_cache(user_id: int | None = None):
+    if user_id is None:
+        _qr_cache_by_user.clear()
+        return
+    _qr_cache_by_user.pop(user_id, None)
 
 # Global state cho Zalo — KHÔNG lưu playwright/context/page ở đây.
 # Mỗi task (login, send_messages, add_friends) tự mở/đóng browser riêng.
@@ -81,33 +84,76 @@ class AddFriendRequest(BaseModel):
 
 # ============== Session Helpers ==============
 
-def get_session_manager():
-    """Tạo ZaloSessionManager với thư mục mặc định duy nhất."""
+def get_session_manager(user_id: int):
+    """Tạo ZaloSessionManager với thư mục session theo user."""
     from logic.zalo_logic import ZaloSessionManager
-    return ZaloSessionManager(session_dir=str(ZALO_SESSION_DIR))
+    session_dir = APP_DATA_DIR / f"zalo_session_{user_id}"
+    return ZaloSessionManager(session_dir=str(session_dir))
 
 
 def persist_session_snapshot(session_manager, existing_info: Optional[dict] = None, zalo_name: str = "") -> dict:
     """Đảm bảo metadata session tồn tại mỗi khi phát hiện session đang active."""
     session_info = dict(existing_info or {})
+    now_ts = time.time()
     session_info["status"] = "active"
-    session_info.setdefault("last_login", time.strftime('%Y-%m-%d %H:%M:%S'))
+    session_info["last_login"] = time.strftime('%Y-%m-%d %H:%M:%S')
+    session_info["last_login_ts"] = now_ts
+    session_info["expires_at_ts"] = now_ts + SESSION_CACHE_TTL_SECONDS
+    session_info["ttl_seconds"] = SESSION_CACHE_TTL_SECONDS
     if zalo_name:
         session_info["zalo_name"] = zalo_name
     session_manager.save_session_info(session_info)
     return session_info
 
 
-def sync_session_state() -> dict:
+def _resolve_session_expires_at_ts(session_info: dict) -> float:
+    expires_at_ts = session_info.get("expires_at_ts")
+    if expires_at_ts is not None:
+        try:
+            return float(expires_at_ts)
+        except Exception:
+            pass
+
+    last_login_ts = session_info.get("last_login_ts")
+    if last_login_ts is not None:
+        try:
+            return float(last_login_ts) + SESSION_CACHE_TTL_SECONDS
+        except Exception:
+            pass
+
+    # Legacy migration: last_login dạng string '%Y-%m-%d %H:%M:%S'
+    legacy_last_login = session_info.get("last_login")
+    if isinstance(legacy_last_login, str) and legacy_last_login.strip():
+        try:
+            dt = datetime.strptime(legacy_last_login, "%Y-%m-%d %H:%M:%S")
+            return dt.timestamp() + SESSION_CACHE_TTL_SECONDS
+        except Exception:
+            pass
+
+    return 0.0
+
+
+def _is_session_cache_active(session_info: dict) -> bool:
+    if session_info.get("status") != "active":
+        return False
+    expires_at_ts = _resolve_session_expires_at_ts(session_info)
+    return expires_at_ts > 0 and time.time() < expires_at_ts
+
+
+def sync_session_state(user_id: int) -> dict:
     """Đồng bộ session Zalo từ dữ liệu lưu trên disk thay vì chỉ dựa vào RAM."""
-    session_manager = get_session_manager()
+    session_manager = get_session_manager(user_id)
     session_info = session_manager.get_session_info() or {}
     has_session = session_manager.has_session()
-    session_active = has_session and session_info.get("status") == "active"
-    zalo_name = session_info.get("zalo_name", "")
+    session_active = has_session and _is_session_cache_active(session_info)
 
-    zalo_state["session_active"] = session_active
-    zalo_state["zalo_name"] = zalo_name
+    if has_session and session_info.get("status") == "active" and not session_active:
+        session_info["status"] = "expired"
+        session_info["expires_at_ts"] = 0
+        session_info["ttl_seconds"] = SESSION_CACHE_TTL_SECONDS
+        session_manager.save_session_info(session_info)
+
+    zalo_name = session_info.get("zalo_name", "")
 
     return {
         "session_manager": session_manager,
@@ -117,9 +163,9 @@ def sync_session_state() -> dict:
     }
 
 
-async def resolve_session_state(verify: bool = False) -> dict:
+async def resolve_session_state(user_id: int, verify: bool = False) -> dict:
     """Lấy trạng thái session Zalo và có thể xác thực session thật bằng browser headless."""
-    session_state = sync_session_state()
+    session_state = sync_session_state(user_id)
 
     if not verify:
         return session_state
@@ -136,8 +182,10 @@ async def resolve_session_state(verify: bool = False) -> dict:
 
     if not has_session:
         session_info["status"] = "inactive"
+        session_info["expires_at_ts"] = 0
+        session_info["ttl_seconds"] = SESSION_CACHE_TTL_SECONDS
         session_manager.save_session_info(session_info)
-        return sync_session_state()
+        return sync_session_state(user_id)
 
     # Session đã biết là expired — không cần launch browser verify lại mỗi lần check.
     # Trạng thái chỉ thay đổi khi user login lại, lúc đó session_info được ghi lại.
@@ -169,18 +217,18 @@ async def resolve_session_state(verify: bool = False) -> dict:
         session_info["status"] = "expired"
         session_manager.save_session_info(session_info)
 
-    return sync_session_state()
+    return sync_session_state(user_id)
 
 
 # ============== Session Management ==============
 
 @router.get("/session")
-async def get_session_status(verify: bool = False):
+async def get_session_status(verify: bool = False, current_user=Depends(require_roles("admin", "user"))):
     """Kiểm tra trạng thái session Zalo.
     - verify=False (mặc định): trả về trạng thái nhanh từ disk, không mở browser.
     - verify=True: mở headless browser để xác thực session thực tế (chậm hơn).
     """
-    session_state = await resolve_session_state(verify=verify)
+    session_state = await resolve_session_state(current_user["id"], verify=verify)
 
     return {
         "is_active": session_state["session_active"],
@@ -191,7 +239,7 @@ async def get_session_status(verify: bool = False):
 
 
 @router.post("/login")
-async def login_zalo(background_tasks: BackgroundTasks):
+async def login_zalo(background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """
     Mở trình duyệt để đăng nhập Zalo (quét QR)
     Browser sẽ mở ở chế độ headful để người dùng quét QR
@@ -200,13 +248,13 @@ async def login_zalo(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="Another Zalo task is running")
 
     # Mỗi lần yêu cầu đăng nhập mới phải xoá QR cũ để FE không hiển thị ảnh stale sau F5.
-    _clear_qr_cache()
+    _clear_qr_cache(current_user["id"])
 
     zalo_state["is_running"] = True
     zalo_state["current_task"] = "zalo_login"
     zalo_state["stop_requested"] = False
     
-    background_tasks.add_task(run_zalo_login_task)
+    background_tasks.add_task(run_zalo_login_task, current_user["id"])
     
     return {
         "status": "started",
@@ -214,7 +262,7 @@ async def login_zalo(background_tasks: BackgroundTasks):
     }
 
 
-async def run_zalo_login_task():
+async def run_zalo_login_task(user_id: int):
     """Background task để login Zalo.
     Chạy browser headless để lấy QR mà không hiển thị trang login.
     Sau khi login thành công: lưu session vào disk, đóng browser.
@@ -248,7 +296,7 @@ async def run_zalo_login_task():
             )
 
         def broadcast_qr(qr_base64: str):
-            _cache_qr(qr_base64)
+            _cache_qr(user_id, qr_base64)
             asyncio.run_coroutine_threadsafe(
                 manager.broadcast_qr(qr_base64),
                 loop
@@ -257,7 +305,7 @@ async def run_zalo_login_task():
         def do_login():
             from logic.zalo_automation import ZaloAutomation
 
-            session_manager = get_session_manager()
+            session_manager = get_session_manager(user_id)
             emit_step("[B1] Khởi tạo Playwright cho đăng nhập Zalo...", "info")
 
             # ── Mở browser ẨN để không hiển thị trang login ─────────────────
@@ -521,29 +569,29 @@ async def run_zalo_login_task():
 
 
 @router.post("/logout")
-async def logout_zalo():
+async def logout_zalo(current_user=Depends(require_roles("admin", "user"))):
     """Xóa session Zalo (logout).
     Browser không còn tồn tại trong memory — chỉ cần reset state và xóa session disk.
     """
     try:
         # Xóa session trên disk để buộc QR lần sau
-        session_manager = get_session_manager()
+        session_manager = get_session_manager(current_user["id"])
         session_manager.delete_session()
     except Exception:
         pass
 
     zalo_state["session_active"] = False
     zalo_state["zalo_name"] = ""
-    _clear_qr_cache()
+    _clear_qr_cache(current_user["id"])
     return {"status": "success", "message": "Logged out"}
 
 
 @router.get("/qr")
-async def get_qr_image():
+async def get_qr_image(current_user=Depends(require_roles("admin", "user"))):
     """Trả về QR code đã cache (nếu còn hợp lệ) để FE hiện ngay khi reload trang.
     FE nên gọi endpoint này sau khi xác nhận session chưa đăng nhập.
     """
-    qr_b64 = _get_cached_qr()
+    qr_b64 = _get_cached_qr(current_user["id"])
     return {
         "qr_base64": qr_b64,
         "is_running": zalo_state["is_running"],
@@ -554,12 +602,12 @@ async def get_qr_image():
 # ============== Automation ==============
 
 @router.post("/send-messages")
-async def send_messages(request: SendMessageRequest, background_tasks: BackgroundTasks):
+async def send_messages(request: SendMessageRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """Gửi tin nhắn hàng loạt"""
     if zalo_state["is_running"]:
         raise HTTPException(status_code=400, detail="Another Zalo task is running")
 
-    session_state = await resolve_session_state(verify=False)
+    session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
         raise HTTPException(status_code=400, detail="Please login to Zalo first")
     
@@ -577,6 +625,7 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
     
     background_tasks.add_task(
         run_send_messages_task,
+        current_user["id"],
         valid_customers,
         request.message_template,
         request.check_friend_status
@@ -588,7 +637,7 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
     }
 
 
-async def run_send_messages_task(customers, message_template, check_friend_status):
+async def run_send_messages_task(user_id, customers, message_template, check_friend_status):
     """Background task để gửi tin nhắn.
     Mỗi lần gọi tự mở browser theo cấu hình headless ở Trang Chủ,
     chạy xong đóng lại.
@@ -616,7 +665,7 @@ async def run_send_messages_task(customers, message_template, check_friend_statu
             asyncio.run_coroutine_threadsafe(
                 log_to_ws(f"🌐 Đang mở Zalo để gửi tin nhắn (chế độ {mode_text})...", "info"), loop
             )
-            session_manager = get_session_manager()
+            session_manager = get_session_manager(user_id)
             success, p, context, page = session_manager.connect_with_session(headless=headless)
             if not success:
                 zalo_state["session_active"] = False
@@ -676,12 +725,12 @@ async def run_send_messages_task(customers, message_template, check_friend_statu
 
 
 @router.post("/add-friends")
-async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTasks):
+async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """Kết bạn hàng loạt"""
     if zalo_state["is_running"]:
         raise HTTPException(status_code=400, detail="Another Zalo task is running")
 
-    session_state = await resolve_session_state(verify=False)
+    session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
         raise HTTPException(status_code=400, detail="Please login to Zalo first")
     
@@ -699,6 +748,7 @@ async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTas
     
     background_tasks.add_task(
         run_add_friends_task,
+        current_user["id"],
         valid_customers,
         request.greeting_template
     )
@@ -709,7 +759,7 @@ async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTas
     }
 
 
-async def run_add_friends_task(customers, greeting_template):
+async def run_add_friends_task(user_id, customers, greeting_template):
     """Background task để kết bạn.
     Mỗi lần gọi tự mở browser theo cấu hình headless ở Trang Chủ,
     chạy xong đóng lại.
@@ -730,7 +780,7 @@ async def run_add_friends_task(customers, greeting_template):
             asyncio.run_coroutine_threadsafe(
                 log_to_ws(f"🌐 Đang mở Zalo để kết bạn (chế độ {mode_text})...", "info"), loop
             )
-            session_manager = get_session_manager()
+            session_manager = get_session_manager(user_id)
             success, p, context, page = session_manager.connect_with_session(headless=headless)
             if not success:
                 zalo_state["session_active"] = False

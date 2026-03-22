@@ -2,7 +2,7 @@
 RPA API Routes
 API endpoints cho các tính năng RPA
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from typing import Optional
 import threading
@@ -15,11 +15,12 @@ from datetime import datetime
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
 from config.settings import DOWNLOADS_DIR
+from api.deps.auth import require_roles
 
 # Thread pool cho việc chạy sync callbacks
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
 
 # Global state để quản lý RPA tasks
 rpa_state = {
@@ -409,7 +410,7 @@ class LoginRequest(BaseModel):
 
 
 @router.get("/session")
-async def check_session(force: bool = False):
+async def check_session(force: bool = False, current_user=Depends(require_roles("admin", "user"))):
     """
     Kiểm tra trạng thái session đăng nhập HPO.
     - force=False (mặc định): trả về trạng thái cache nhanh, không mở browser.
@@ -417,13 +418,14 @@ async def check_session(force: bool = False):
     """
     from services.rpa_session_manager import get_rpa_session_manager
 
-    session_manager = get_rpa_session_manager()
+    session_manager = get_rpa_session_manager(current_user["id"])
 
     if not force:
         # Fast path: trả về trạng thái đã lưu trong bộ nhớ, không launch browser
+        cached_valid = session_manager.get_cached_session_valid()
         return {
-            "is_logged_in": session_manager.is_logged_in,
-            "message": "Session hợp lệ" if session_manager.is_logged_in else "Chưa đăng nhập hoặc session hết hạn"
+            "is_logged_in": cached_valid,
+            "message": "Session hợp lệ" if cached_valid else "Chưa đăng nhập hoặc session hết hạn"
         }
 
     # Slow path: kiểm tra thực tế qua Playwright (chỉ khi người dùng bấm nút kiểm tra)
@@ -439,7 +441,7 @@ async def check_session(force: bool = False):
 
 
 @router.post("/login")
-async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks):
+async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """
     Đăng nhập vào HPO và lưu session
     Session được lưu để các lần chạy sau không cần đăng nhập lại
@@ -452,6 +454,7 @@ async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks):
     
     background_tasks.add_task(
         run_login_task,
+        current_user["id"],
         request.username,
         request.password,
         request.headless
@@ -463,7 +466,7 @@ async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks):
     }
 
 
-async def run_login_task(username: str, password: str, headless: bool):
+async def run_login_task(user_id: int, username: str, password: str, headless: bool):
     """Background task để login HPO"""
     try:
         await log_to_ws("Đang khởi tạo đăng nhập HPO...", "info")
@@ -471,7 +474,7 @@ async def run_login_task(username: str, password: str, headless: bool):
         
         from services.rpa_session_manager import get_rpa_session_manager
         
-        session_manager = get_rpa_session_manager()
+        session_manager = get_rpa_session_manager(user_id)
         
         async def callback(msg):
             await log_to_ws(msg, "info")
@@ -499,11 +502,11 @@ async def run_login_task(username: str, password: str, headless: bool):
 
 
 @router.post("/logout")
-async def logout_hpo():
+async def logout_hpo(current_user=Depends(require_roles("admin", "user"))):
     """Đăng xuất và xóa session HPO"""
     from services.rpa_session_manager import get_rpa_session_manager
     
-    session_manager = get_rpa_session_manager()
+    session_manager = get_rpa_session_manager(current_user["id"])
     
     async def callback(msg):
         await log_to_ws(msg, "info")

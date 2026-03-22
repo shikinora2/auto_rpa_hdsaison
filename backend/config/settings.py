@@ -31,6 +31,23 @@ CONFIG_FILE = APP_DATA_DIR / "config.json"
 SMS_GATEWAY_CONFIG_FILE = APP_DATA_DIR / "sms_gateway_config.json"
 SMS_HISTORY_FILE = APP_DATA_DIR / "sms_history.json"
 
+# Session cache TTL (đăng nhập HPO/Zalo)
+SESSION_CACHE_TTL_HOURS = int(os.getenv("SESSION_CACHE_TTL_HOURS", "24"))
+SESSION_CACHE_TTL_SECONDS = SESSION_CACHE_TTL_HOURS * 3600
+
+# Database (mặc định SQLite local, có thể override bằng PostgreSQL/MySQL URL)
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(APP_DATA_DIR / 'app.db').as_posix()}")
+
+# Auth/JWT
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+PASSWORD_RESET_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "15"))
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "123456")
+DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@local")
+
 # Zalo session
 ZALO_SESSION_DIR = APP_DATA_DIR / "zalo_session"
 ZALO_ACCOUNTS_FILE = APP_DATA_DIR / "zalo_accounts.json"
@@ -39,6 +56,7 @@ ZALO_ACCOUNTS_FILE = APP_DATA_DIR / "zalo_accounts.json"
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
+CLEAR_SESSION_ON_STARTUP = os.getenv("CLEAR_SESSION_ON_STARTUP", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 # CORS settings
 # Thêm origins bổ sung qua env var ALLOWED_ORIGINS (phân cách bằng dấu phẩy)

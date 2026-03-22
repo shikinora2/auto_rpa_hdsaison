@@ -1,7 +1,7 @@
 @echo off
-title HD SAISON RPA Tool - Launcher
+title automation marketing - Launcher
 echo ============================================================
-echo    HD SAISON RPA Tool v2.0.0 - Web Edition
+echo    automation marketing v2.0.0 - Web Edition
 echo ============================================================
 echo.
 

@@ -21,6 +21,8 @@ DEFAULT_CONFIG = {
     "username": "",
     "password": "",
     "enabled": False,
+    "use_specific_sim": False,
+    "sim_number": 1,
 }
 
 
@@ -168,6 +170,14 @@ class SmsGatewayService:
             "message": text,
             "phoneNumbers": phones,
         }
+
+        if cfg.get("use_specific_sim"):
+            try:
+                sim_number = int(cfg.get("sim_number", 1))
+                if 1 <= sim_number <= 3:
+                    payload["simNumber"] = sim_number
+            except (TypeError, ValueError):
+                pass
 
         message_id = str(uuid.uuid4())[:8]
 

@@ -1,5 +1,5 @@
 """
-HD Saison RPA Tool - Backend API
+automation marketing - Backend API
 FastAPI server với WebSocket support
 """
 # ⚠️ QUAN TRỌNG: Phải đặt WindowsProactorEventLoopPolicy TRƯỚC khi import asyncio
@@ -27,10 +27,13 @@ from config.settings import (
     DOWNLOADS_DIR,
     API_HOST,
     API_PORT,
-    DEBUG
+    DEBUG,
+    CLEAR_SESSION_ON_STARTUP
 )
 from api.websocket.connection_manager import manager
-from api.routes import config, rpa, zalo, files, sms
+from api.routes import auth, config, rpa, zalo, files, sms
+from db.database import SessionLocal
+from db.init_db import init_db_schema, seed_default_roles, seed_default_admin
 
 
 @asynccontextmanager
@@ -39,22 +42,38 @@ async def lifespan(app: FastAPI):
     import shutil
     # Startup
     print("=" * 60)
-    print("HD SAISON RPA Tool - Backend API v1.0.0")
+
+    # Database init (MVP): tạo schema nếu chưa có + seed role mặc định
+    try:
+        init_db_schema()
+        db = SessionLocal()
+        try:
+            seed_default_roles(db)
+            seed_default_admin(db)
+        finally:
+            db.close()
+        print("DB schema ready (users/roles/auth tables).")
+    except Exception as e:
+        print(f"DB init warning: {e}")
+    print("automation marketing - Backend API v1.0.0")
     print("=" * 60)
     print(f"Server running at http://{API_HOST}:{API_PORT}")
     print(f"API docs at http://localhost:{API_PORT}/docs")
     print(f"WebSocket endpoint: ws://localhost:{API_PORT}/ws/logs")
     print("=" * 60)
     
-    print("Dọn dẹp session (Zalo & RPA) để yêu cầu đăng nhập mới...")
-    try:
-        if APP_DATA_DIR.exists():
-            for item in APP_DATA_DIR.iterdir():
-                if item.is_dir() and (item.name == "rpa_session" or item.name.startswith("zalo_session")):
-                    shutil.rmtree(item, ignore_errors=True)
-                    print(f"  - Đã xóa session cũ: {item.name}")
-    except Exception as e:
-        print(f"Lỗi khi dọn dẹp session: {e}")
+    if CLEAR_SESSION_ON_STARTUP:
+        print("Dọn dẹp session (Zalo & RPA) do CLEAR_SESSION_ON_STARTUP=true...")
+        try:
+            if APP_DATA_DIR.exists():
+                for item in APP_DATA_DIR.iterdir():
+                    if item.is_dir() and (item.name == "rpa_session" or item.name.startswith("zalo_session")):
+                        shutil.rmtree(item, ignore_errors=True)
+                        print(f"  - Đã xóa session cũ: {item.name}")
+        except Exception as e:
+            print(f"Lỗi khi dọn dẹp session: {e}")
+    else:
+        print("Giữ session đăng nhập hiện có (cache TTL điều khiển tại runtime).")
     print("=" * 60)
     
     yield
@@ -65,8 +84,8 @@ async def lifespan(app: FastAPI):
 
 # Khởi tạo FastAPI app
 app = FastAPI(
-    title="HD Saison RPA Tool API",
-    description="Backend API for HD Saison RPA automation tool",
+    title="automation marketing API",
+    description="Backend API for automation marketing tool",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -85,6 +104,7 @@ app.mount("/downloads", StaticFiles(directory=str(DOWNLOADS_DIR)), name="downloa
 
 # Include API routers
 app.include_router(config.router, prefix="/api/config", tags=["Config"])
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(rpa.router, prefix="/api/rpa", tags=["RPA"])
 app.include_router(zalo.router, prefix="/api/zalo", tags=["Zalo"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
@@ -99,7 +119,7 @@ async def root():
         return FileResponse(str(frontend_index))
     return {
         "status": "ok",
-        "message": "HD Saison RPA Tool API is running",
+        "message": "automation marketing API is running",
         "version": "1.0.0",
         "websocket_url": f"ws://localhost:{API_PORT}/ws/logs"
     }

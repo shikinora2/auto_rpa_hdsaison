@@ -8,7 +8,7 @@ import {
   MobileOutlined, SendOutlined, HistoryOutlined,
   SettingOutlined, CheckCircleOutlined, CloseCircleOutlined,
   DeleteOutlined, ReloadOutlined, WifiOutlined, PlusOutlined,
-  MinusCircleOutlined, DownloadOutlined, FileExcelOutlined,
+  DownloadOutlined, FileExcelOutlined,
   PauseCircleOutlined, PlayCircleOutlined, StopOutlined,
 } from '@ant-design/icons';
 import { smsAPI, filesAPI } from '../../services/api';
@@ -138,7 +138,7 @@ function ConfigTab() {
         form={form}
         layout="vertical"
         onFinish={handleSave}
-        initialValues={{ device_port: 8080, enabled: false }}
+        initialValues={{ device_port: 8080, enabled: false, use_specific_sim: false, sim_number: 1 }}
         className="sms-config-form"
       >
         <div className="sms-form-row">
@@ -189,6 +189,53 @@ function ConfigTab() {
           <Switch checkedChildren="BẬT" unCheckedChildren="TẮT" />
         </Form.Item>
 
+        <Form.Item name="use_specific_sim" valuePropName="checked" style={{ marginBottom: 8 }}>
+          <Checkbox>Bật chọn SIM gửi SMS</Checkbox>
+        </Form.Item>
+
+        <Form.Item
+          shouldUpdate={(prev, curr) => (
+            prev.use_specific_sim !== curr.use_specific_sim
+            || prev.sim_number !== curr.sim_number
+          )}
+          noStyle
+        >
+          {({ getFieldValue }) => (
+            <Form.Item
+              name="sim_number"
+              label="SIM gửi"
+              rules={[
+                {
+                  validator: (_, value) => {
+                    if (!getFieldValue('use_specific_sim')) return Promise.resolve();
+                    if (value === 1 || value === 2) return Promise.resolve();
+                    return Promise.reject(new Error('Vui lòng chọn SIM 1 hoặc SIM 2'));
+                  }
+                }
+              ]}
+            >
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Button
+                  type={getFieldValue('sim_number') === 1 ? 'primary' : 'default'}
+                  onClick={() => form.setFieldValue('sim_number', 1)}
+                  htmlType="button"
+                  disabled={!getFieldValue('use_specific_sim')}
+                >
+                  SIM 1
+                </Button>
+                <Button
+                  type={getFieldValue('sim_number') === 2 ? 'primary' : 'default'}
+                  onClick={() => form.setFieldValue('sim_number', 2)}
+                  htmlType="button"
+                  disabled={!getFieldValue('use_specific_sim')}
+                >
+                  SIM 2
+                </Button>
+              </div>
+            </Form.Item>
+          )}
+        </Form.Item>
+
         <div className="sms-form-actions">
           <Button
             type="default"
@@ -216,6 +263,8 @@ function ConfigTab() {
 function SendTab() {
   const [customers, setCustomers] = useState([]);
   const [messageTemplate, setMessageTemplate] = useState('');
+  const [manualPhoneInput, setManualPhoneInput] = useState('');
+  const [manualPhones, setManualPhones] = useState([]);
   const [charCount, setCharCount] = useState(0);
   const [sendingState, setSendingState] = useState({ isSending: false, total: 0, current: 0 });
   const [isPaused, setIsPaused] = useState(false);
@@ -274,8 +323,17 @@ function SendTab() {
 
   const handleSendBatch = async () => {
     const validCustomers = customers.filter(c => String(c.phone || '').trim());
-    if (validCustomers.length === 0) {
-      message.warning('Không có số điện thoại nào hợp lệ trong danh sách');
+    const validManualPhones = manualPhones
+      .map(p => String(p || '').trim())
+      .filter(Boolean);
+
+    const recipients = [
+      ...validCustomers.map(customer => ({ type: 'file', customer })),
+      ...validManualPhones.map(phone => ({ type: 'manual', phone })),
+    ];
+
+    if (recipients.length === 0) {
+      message.warning('Không có số điện thoại nào hợp lệ để gửi');
       return;
     }
     if (!messageTemplate.trim()) {
@@ -287,7 +345,7 @@ function SendTab() {
       return;
     }
 
-    setSendingState({ isSending: true, total: validCustomers.length, current: 0 });
+    setSendingState({ isSending: true, total: recipients.length, current: 0 });
     setIsPaused(false);
     isSendingRef.current = true;
     isPausedRef.current = false;
@@ -295,7 +353,35 @@ function SendTab() {
 
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
-    for (let i = 0; i < validCustomers.length; i++) {
+    const buildMessageByRecipient = (recipient) => {
+      const customer = recipient.type === 'file'
+        ? recipient.customer
+        : {
+          phone: recipient.phone,
+          name: '',
+          gender: '',
+          contract_id: '',
+          cccd: '',
+          address: '',
+        };
+
+      let text = messageTemplate
+        .replace(/{name}/g, customer.name || '')
+        .replace(/{gender}/g, customer.gender || '')
+        .replace(/{phone}/g, customer.phone || '')
+        .replace(/{contract_id}/g, customer.contract_id || '')
+        .replace(/{cccd}/g, customer.cccd || '')
+        .replace(/{address}/g, customer.address || '');
+
+      if (addRandomChar) {
+        const randChar = chars.charAt(Math.floor(Math.random() * chars.length));
+        text += ` [${randChar}]`;
+      }
+
+      return text;
+    };
+
+    for (let i = 0; i < recipients.length; i++) {
       if (!isSendingRef.current) break; // Bị hủy
 
       // Kiểm tra trạng thái Tạm dừng
@@ -305,36 +391,25 @@ function SendTab() {
       }
       if (!isSendingRef.current) break;
 
-      const c = validCustomers[i];
+      const recipient = recipients[i];
+      const phone = recipient.type === 'file' ? recipient.customer.phone : recipient.phone;
       setSendingState(prev => ({ ...prev, current: i + 1 }));
-
-      let text = messageTemplate
-        .replace(/{name}/g, c.name || '')
-        .replace(/{gender}/g, c.gender || '')
-        .replace(/{phone}/g, c.phone || '')
-        .replace(/{contract_id}/g, c.contract_id || '')
-        .replace(/{cccd}/g, c.cccd || '')
-        .replace(/{address}/g, c.address || '');
-
-      if (addRandomChar) {
-        const randChar = chars.charAt(Math.floor(Math.random() * chars.length));
-        text += ` [${randChar}]`;
-      }
+      const text = buildMessageByRecipient(recipient);
 
       try {
         await smsAPI.send({
-          phone_numbers: [c.phone],
+          phone_numbers: [phone],
           message: text,
         });
         successCount++;
 
         // Nghỉ ngơi giữa 2 lần gửi
-        if (i < validCustomers.length - 1 && isSendingRef.current) {
+        if (i < recipients.length - 1 && isSendingRef.current) {
           const delayTimeout = Math.floor(Math.random() * (delayConfig.max - delayConfig.min + 1)) + delayConfig.min;
           await new Promise(r => setTimeout(r, delayTimeout));
         }
       } catch (err) {
-        console.error("Gửi SMS lỗi cho SĐT", c.phone, err);
+        console.error("Gửi SMS lỗi cho SĐT", phone, err);
       }
     }
 
@@ -346,13 +421,31 @@ function SendTab() {
     if (wasCanceled) {
       message.info(`Đã dừng gửi tin. Gửi thành công: ${successCount} tin.`);
     } else {
-      message.success(`Đã hoàn tất gửi tin. Thành công: ${successCount}/${validCustomers.length}`);
+      message.success(`Đã hoàn tất gửi tin. Thành công: ${successCount}/${recipients.length}`);
     }
   };
 
   const handleStop = () => {
     isSendingRef.current = false;
     setIsPaused(false);
+  };
+
+  const handleAddManualPhone = () => {
+    const phone = String(manualPhoneInput || '').trim();
+    if (!phone) {
+      message.warning('Vui lòng nhập số điện thoại trước khi thêm');
+      return;
+    }
+    if (manualPhones.includes(phone)) {
+      message.warning('Số điện thoại này đã có trong danh sách thủ công');
+      return;
+    }
+    setManualPhones(prev => [...prev, phone]);
+    setManualPhoneInput('');
+  };
+
+  const handleRemoveManualPhone = (phone) => {
+    setManualPhones(prev => prev.filter(p => p !== phone));
   };
 
   const customerColumns = [
@@ -376,8 +469,12 @@ function SendTab() {
     },
   ];
 
+  const validFileCustomersCount = customers.filter(c => String(c.phone || '').trim()).length;
+  const validManualPhonesCount = manualPhones.filter(p => String(p || '').trim()).length;
+  const totalRecipientsCount = validFileCustomersCount + validManualPhonesCount;
+
   return (
-    <div className="sms-tab-content" style={{ maxWidth: 800 }}>
+    <div className="sms-tab-content">
       {/* Tải dữ liệu Khách hàng */}
       <div className="sms-section-header">
         <SendOutlined className="sms-section-icon" />
@@ -411,6 +508,48 @@ function SendTab() {
         locale={{ emptyText: 'Chưa có danh sách khách hàng' }}
       />
 
+      <div className="sms-manual-send-box">
+        <b>Gửi thủ công lẻ từng số:</b>
+        <Space style={{ width: '100%', marginTop: 8 }} wrap>
+          <Input
+            value={manualPhoneInput}
+            onChange={(e) => setManualPhoneInput(e.target.value)}
+            onPressEnter={handleAddManualPhone}
+            placeholder="Nhập số điện thoại thủ công"
+            style={{ width: 260 }}
+            disabled={sendingState.isSending}
+          />
+          <Button
+            icon={<PlusOutlined />}
+            onClick={handleAddManualPhone}
+            disabled={sendingState.isSending}
+          >
+            Thêm SĐT
+          </Button>
+        </Space>
+
+        <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
+          Lưu ý: Danh sách thủ công chỉ dùng biến {'{phone}'}. Các biến nhanh khác như {'{name}'}, {'{contract_id}'} sẽ tự động để trống.
+        </div>
+
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {manualPhones.map((phone) => (
+            <Tag
+              key={phone}
+              color="blue"
+              closable
+              onClose={() => handleRemoveManualPhone(phone)}
+              style={{ marginInlineEnd: 0 }}
+            >
+              {phone}
+            </Tag>
+          ))}
+          {manualPhones.length === 0 && (
+            <span style={{ color: '#64748b', fontSize: 12 }}>Chưa có số thủ công nào</span>
+          )}
+        </div>
+      </div>
+
       <Divider style={{ margin: '16px 0' }} />
 
       {/* Trình soạn thảo SMS */}
@@ -438,7 +577,7 @@ function SendTab() {
           ref={messageInputRef}
           rows={5}
           disabled={sendingState.isSending}
-          placeholder="[HD Saison] Chao {gender} {name}, chuc mung ho so {contract_id} da duoc duyet..."
+          placeholder="[automation marketing] Chao {gender} {name}, chuc mung ho so {contract_id} da duoc duyet..."
           value={messageTemplate}
           onChange={(e) => {
             setMessageTemplate(e.target.value);
@@ -513,12 +652,12 @@ function SendTab() {
           <Button
             type="primary"
             onClick={handleSendBatch}
-            disabled={customers.length === 0}
+            disabled={totalRecipientsCount === 0}
             icon={<SendOutlined />}
             size="large"
             style={{ width: '100%' }}
           >
-            Bắt đầu Gửi SMS ({customers.filter(c => String(c.phone || '').trim()).length} khách)
+            Bắt đầu Gửi SMS ({totalRecipientsCount} số)
           </Button>
         )}
       </div>

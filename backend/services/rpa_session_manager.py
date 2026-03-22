@@ -10,14 +10,16 @@ sync_playwright chạy trong thread pool không phụ thuộc vào event loop ty
 import os
 import asyncio
 import shutil
+import json
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from playwright.sync_api import sync_playwright
 
-from config.settings import APP_DATA_DIR
+from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS
 
-# Thư mục lưu session RPA
-RPA_SESSION_DIR = APP_DATA_DIR / "rpa_session"
+# Thư mục lưu session RPA theo user
+RPA_SESSION_ROOT_DIR = APP_DATA_DIR / "rpa_sessions"
 
 # URLs
 LOGIN_URL = "https://hpo.hdsaison.com.vn/login"
@@ -35,14 +37,72 @@ _playwright_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rpa
 class RPASessionManager:
     """Quản lý phiên đăng nhập RPA với persistent context"""
 
-    def __init__(self):
+    def __init__(self, user_id: int | str):
+        self.user_id = str(user_id)
+        self.session_dir = RPA_SESSION_ROOT_DIR / f"user_{self.user_id}"
+        self.session_info_file = self.session_dir / "session_info.json"
         self.is_logged_in = False
         self._lock = asyncio.Lock()
+        self._load_cached_login_state()
 
     def _ensure_session_dir(self):
         """Đảm bảo thư mục session tồn tại"""
-        RPA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
-        return str(RPA_SESSION_DIR)
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        return str(self.session_dir)
+
+    def _read_session_info(self) -> dict:
+        try:
+            if not self.session_info_file.exists():
+                return {}
+            with open(self.session_info_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_session_info(self, info: dict):
+        try:
+            self._ensure_session_dir()
+            with open(self.session_info_file, "w", encoding="utf-8") as f:
+                json.dump(info, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _is_cache_active(self, session_info: dict) -> bool:
+        if not session_info:
+            return False
+        if session_info.get("status") != "active":
+            return False
+        expires_at_ts = float(session_info.get("expires_at_ts") or 0)
+        if expires_at_ts <= 0:
+            return False
+        return time.time() < expires_at_ts
+
+    def _set_cache_active(self):
+        now_ts = time.time()
+        self._write_session_info({
+            "status": "active",
+            "last_login_ts": now_ts,
+            "expires_at_ts": now_ts + SESSION_CACHE_TTL_SECONDS,
+            "ttl_seconds": SESSION_CACHE_TTL_SECONDS,
+        })
+
+    def _set_cache_inactive(self, reason: str = "inactive"):
+        self._write_session_info({
+            "status": reason,
+            "expires_at_ts": 0,
+            "ttl_seconds": SESSION_CACHE_TTL_SECONDS,
+        })
+
+    def _load_cached_login_state(self):
+        try:
+            if not self.session_dir.exists():
+                self.is_logged_in = False
+                return
+            session_info = self._read_session_info()
+            self.is_logged_in = self._is_cache_active(session_info)
+        except Exception:
+            self.is_logged_in = False
 
     def _clear_stale_session(self):
         """
@@ -50,10 +110,11 @@ class RPASessionManager:
         Lần đăng nhập tiếp theo sẽ bắt đầu fresh — không load lại session hỏng.
         """
         try:
-            if RPA_SESSION_DIR.exists():
-                shutil.rmtree(RPA_SESSION_DIR, ignore_errors=True)
-                print(f"[RPA] 🗑️  Đã xóa session cũ bị hết hạn: {RPA_SESSION_DIR}")
+            if self.session_dir.exists():
+                shutil.rmtree(self.session_dir, ignore_errors=True)
+                print(f"[RPA][user={self.user_id}] 🗑️  Đã xóa session cũ bị hết hạn: {self.session_dir}")
                 self.is_logged_in = False
+                self._set_cache_inactive("expired")
         except Exception as e:
             print(f"[RPA] Không thể xóa session cũ: {e}")
 
@@ -97,6 +158,7 @@ class RPASessionManager:
                 current_url = page.url
                 if DASHBOARD_URL in current_url or 'dashboard' in current_url.lower():
                     self._log_from_thread(loop, status_callback, "✅ Session còn hợp lệ! Đã đăng nhập sẵn.")
+                    self._set_cache_active()
                     context.close()
                     return True
                 else:
@@ -143,6 +205,7 @@ class RPASessionManager:
                     current_url = page.url
                     if DASHBOARD_URL in current_url or 'dashboard' in current_url.lower():
                         self._log_from_thread(loop, status_callback, "✅ Đã có session hợp lệ! Không cần đăng nhập lại.")
+                        self._set_cache_active()
                         context.close()
                         return True
                 except Exception as e:
@@ -164,6 +227,7 @@ class RPASessionManager:
                 page.wait_for_url("**/dashboard**", timeout=30000)
 
                 self._log_from_thread(loop, status_callback, "✅ Đăng nhập thành công! Session đã được lưu.")
+                self._set_cache_active()
                 context.close()
                 return True
 
@@ -197,7 +261,18 @@ class RPASessionManager:
                 lambda: self._check_session_valid_sync(loop, status_callback)
             )
             self.is_logged_in = result
+            if result:
+                self._set_cache_active()
+            else:
+                self._set_cache_inactive("expired")
             return result
+
+    def get_cached_session_valid(self) -> bool:
+        """Fast path: đọc cache TTL từ disk, không mở browser."""
+        session_info = self._read_session_info()
+        valid = self._is_cache_active(session_info)
+        self.is_logged_in = valid
+        return valid
 
     async def login(self, username: str, password: str, headless: bool = False, status_callback=None) -> bool:
         """
@@ -211,6 +286,10 @@ class RPASessionManager:
                 lambda: self._login_sync(username, password, headless, loop, status_callback)
             )
             self.is_logged_in = result
+            if result:
+                self._set_cache_active()
+            else:
+                self._set_cache_inactive("inactive")
             return result
 
     async def logout(self, status_callback=None) -> bool:
@@ -223,17 +302,18 @@ class RPASessionManager:
                     else:
                         status_callback("Đang xóa session HPO...")
 
-                if RPA_SESSION_DIR.exists():
+                if self.session_dir.exists():
                     # Retry logic for Windows file locking
                     for _ in range(3):
                         try:
-                            shutil.rmtree(RPA_SESSION_DIR, ignore_errors=False)
+                            shutil.rmtree(self.session_dir, ignore_errors=False)
                             break
                         except Exception:
                             await asyncio.sleep(0.5)
-                            shutil.rmtree(RPA_SESSION_DIR, ignore_errors=True)
+                            shutil.rmtree(self.session_dir, ignore_errors=True)
 
                 self.is_logged_in = False
+                self._set_cache_inactive("logged_out")
                 print("[RPA] ✅ Đã đăng xuất!")
 
                 if status_callback:
@@ -250,13 +330,15 @@ class RPASessionManager:
                 return False
 
 
-# Global instance
-_rpa_session_manager = None
+# Per-user global instances
+_rpa_session_manager_by_user: dict[str, RPASessionManager] = {}
 
 
-def get_rpa_session_manager() -> RPASessionManager:
-    """Lấy global RPA session manager instance"""
-    global _rpa_session_manager
-    if _rpa_session_manager is None:
-        _rpa_session_manager = RPASessionManager()
-    return _rpa_session_manager
+def get_rpa_session_manager(user_id: int | str = "default") -> RPASessionManager:
+    """Lấy RPA session manager theo user_id."""
+    key = str(user_id)
+    manager = _rpa_session_manager_by_user.get(key)
+    if manager is None:
+        manager = RPASessionManager(user_id=key)
+        _rpa_session_manager_by_user[key] = manager
+    return manager

@@ -6,13 +6,14 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from services.sms_gateway import SmsGatewayService
+from api.deps.auth import require_roles
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
 
 
 # ============== Pydantic Models ==============
@@ -23,6 +24,8 @@ class SmsGatewayConfig(BaseModel):
     username: str = Field("", description="Username từ Gateway app")
     password: str = Field("", description="Password từ Gateway app")
     enabled: bool = Field(False, description="Bật/tắt SMS Gateway")
+    use_specific_sim: bool = Field(False, description="Bật chọn SIM cụ thể khi gửi SMS")
+    sim_number: int = Field(1, ge=1, le=2, description="SIM dùng để gửi (1 hoặc 2)")
 
 
 class SendSmsRequest(BaseModel):
@@ -32,7 +35,7 @@ class SendSmsRequest(BaseModel):
 
 # ============== Endpoints ==============
 
-@router.get("/config", summary="Đọc cấu hình SMS Gateway")
+@router.get("/config", summary="Đọc cấu hình SMS Gateway", dependencies=[Depends(require_roles("admin"))])
 async def get_config():
     """Trả về cấu hình gateway hiện tại (che password)."""
     cfg = SmsGatewayService.load_config()
@@ -43,7 +46,7 @@ async def get_config():
     return {"success": True, "config": safe_cfg}
 
 
-@router.post("/config", summary="Lưu cấu hình SMS Gateway")
+@router.post("/config", summary="Lưu cấu hình SMS Gateway", dependencies=[Depends(require_roles("admin"))])
 async def save_config(config: SmsGatewayConfig):
     """Lưu cấu hình gateway vào file JSON."""
     try:
@@ -122,7 +125,7 @@ async def get_messages(limit: int = 100):
     }
 
 
-@router.delete("/messages", summary="Xóa toàn bộ lịch sử tin nhắn")
+@router.delete("/messages", summary="Xóa toàn bộ lịch sử tin nhắn", dependencies=[Depends(require_roles("admin"))])
 async def clear_messages():
     """Xóa toàn bộ lịch sử gửi tin nhắn."""
     try:

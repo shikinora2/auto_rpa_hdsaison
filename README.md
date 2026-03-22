@@ -1,6 +1,6 @@
-﻿# Auto RPA HD Saison (Web)
+﻿# automation marketing (Web)
 
-Hệ thống tự động hóa nghiệp vụ HD Saison với kiến trúc Web:
+Hệ thống automation marketing với kiến trúc Web:
 - Backend: FastAPI + Playwright
 - Frontend: React + Vite
 - Realtime log/status: WebSocket

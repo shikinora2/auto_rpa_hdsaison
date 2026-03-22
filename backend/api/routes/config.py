@@ -8,7 +8,7 @@ Cải tiến bảo mật & ổn định:
   - atomic_write_json() để tránh file hỏng khi crash giữa chừng
   - Mã hóa password trước khi lưu, tự động migrate plain text cũ
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
@@ -16,8 +16,9 @@ import asyncio
 from config.settings import CONFIG_FILE, DEFAULT_CONFIG
 from utils.file_utils import atomic_write_json, safe_read_json
 from utils.encryption import encrypt_value, decrypt_value, is_encrypted
+from api.deps.auth import require_roles
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin"))])
 
 # Lock toàn module để serialize mọi thao tác đọc/ghi config.
 # Tránh race condition khi nhiều async request ghi đồng thời.

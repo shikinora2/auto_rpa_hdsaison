@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 
-title HD SAISON RPA - All-in-One Test
+title automation marketing - All-in-One Test
 
 set ROOT=%~dp0
 set PYTHON_EXE=%ROOT%.venv\Scripts\python.exe
@@ -11,7 +11,7 @@ set FRONTEND_DIR=%ROOT%frontend
 
 echo.
 echo ============================================================
-echo   HD SAISON RPA - ALL-IN-ONE TEST
+echo   AUTOMATION MARKETING - ALL-IN-ONE TEST
 echo ============================================================
 echo.
 

@@ -2,7 +2,7 @@
 Files API Routes
 API endpoints cho upload/download files
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import List
 import os
@@ -14,8 +14,9 @@ import unicodedata
 from datetime import datetime
 
 from config.settings import DOWNLOADS_DIR, APP_DATA_DIR, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE
+from api.deps.auth import require_roles
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
 
 # Thư mục temp cho upload
 UPLOAD_DIR = APP_DATA_DIR / "uploads"

@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
-title HD SAISON RPA - Dev Launcher
+title automation marketing - Dev Launcher
 color 0A
 
 echo.
 echo  ╔══════════════════════════════════════════════════╗
-echo  ║       HD SAISON RPA Tool - Dev Launcher          ║
+echo  ║       automation marketing - Dev Launcher        ║
 echo  ║       Backend: http://localhost:8000              ║
 echo  ║       Frontend: http://localhost:5173             ║
 echo  ╚══════════════════════════════════════════════════╝

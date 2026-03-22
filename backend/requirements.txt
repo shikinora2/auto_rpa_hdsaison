@@ -1,4 +1,4 @@
-# Backend Dependencies for HD Saison RPA Tool
+# Backend Dependencies for automation marketing
 # FastAPI + WebSocket + Async Support
 
 # Web Framework
@@ -12,6 +12,11 @@ aiofiles==23.2.1
 
 # Data Validation
 pydantic==2.5.3
+email-validator>=2.1.1
+
+# Database + Migration
+SQLAlchemy>=2.0.29
+alembic>=1.13.1
 
 # Browser Automation
 playwright==1.41.0
@@ -31,6 +36,8 @@ python-dateutil==2.8.2
 
 # Security — Mã hóa dữ liệu nhạy cảm (password)
 cryptography>=42.0.0
+passlib[bcrypt]>=1.7.4
+PyJWT>=2.8.0
 
 # HTTP Client — gọi Android SMS Gateway API
 aiohttp>=3.9.0
