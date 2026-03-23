@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ConfigProvider, Layout, Menu, theme, Switch, Tooltip, Button, message, Modal, Form, Input } from 'antd';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ConfigProvider, Layout, Menu, theme, Switch, Tooltip, Button, message, Modal, Form, Input, Popover, Badge, Drawer } from 'antd';
 import viVN from 'antd/locale/vi_VN';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -17,6 +17,9 @@ import {
   EyeOutlined,
   EyeInvisibleOutlined,
   UserOutlined,
+  TeamOutlined,
+  BellOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 
 import { authAPI, configAPI, rpaAPI, zaloAPI } from './services/api';
@@ -24,8 +27,8 @@ import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Zalo from './pages/Zalo';
 import SmsGateway from './pages/SmsGateway';
+import AdminUsers from './pages/AdminUsers';
 import LoginPage from './pages/Auth/LoginPage';
-import ConsoleLog from './components/ConsoleLog';
 import { useWebSocket } from './hooks/useWebSocket';
 
 import './App.css';
@@ -35,7 +38,7 @@ dayjs.locale('vi');
 const { Sider, Content } = Layout;
 
 // Menu items configuration
-const menuItems = [
+const baseMenuItems = [
   {
     key: 'dashboard',
     icon: <HomeOutlined />,
@@ -64,16 +67,70 @@ const pageTitles = {
   tasks: 'Tác Vụ RPA',
   zalo: 'Auto Zalo',
   'sms-gateway': 'SMS Gateway',
+  'admin-users': 'Quản Trị Tài Khoản',
 };
 
 const TASK_LABELS = {
   check_contracts: 'Kiểm tra HĐ',
   download_files: 'Tải file PDF/JSON',
-  scrape_details: 'Cào chi tiết → Excel',
+  scrape_details: 'Lấy thông tin chi tiết → Excel',
   login: 'Đăng nhập HPO',
   zalo_login: 'Login Zalo',
   send_messages: 'Gửi tin nhắn Zalo',
   add_friends: 'Kết bạn Zalo',
+};
+
+const HELP_GUIDES = {
+  dashboard: {
+    title: 'Hướng dẫn Trang Chủ',
+    summary: 'Dùng để quản lý phiên đăng nhập HPO và Zalo trước khi chạy tác vụ.',
+    steps: [
+      'Nhập tài khoản HPO và bấm Đăng nhập HPO để mở phiên làm việc.',
+      'Dùng nút Kiểm tra lại phiên để xác nhận trạng thái thực tế.',
+      'Ở phần Zalo, bấm Đăng nhập Zalo rồi quét mã QR trên điện thoại.',
+      'Nếu cần đăng nhập lại từ đầu, bấm Xóa phiên (HPO) hoặc Đăng xuất Zalo.',
+    ],
+  },
+  tasks: {
+    title: 'Hướng dẫn Tác Vụ RPA',
+    summary: 'Chạy các nghiệp vụ kiểm tra, tải file và lấy thông tin chi tiết hợp đồng.',
+    steps: [
+      'Chọn khoảng thời gian hợp đồng trước khi bấm bất kỳ tác vụ nào.',
+      'Kiểm tra số lượng: chỉ đếm số hợp đồng, không tải dữ liệu.',
+      'Tải file PDF/JSON: tải file hợp đồng theo định dạng đã chọn.',
+      'Lấy thông tin chi tiết → Excel: xuất file Excel tổng hợp thông tin.',
+    ],
+  },
+  zalo: {
+    title: 'Hướng dẫn Auto Zalo',
+    summary: 'Gửi tin nhắn hoặc kết bạn hàng loạt dựa trên danh sách dữ liệu.',
+    steps: [
+      'Bảo đảm trạng thái Zalo đã đăng nhập thành công ở Trang Chủ.',
+      'Nạp danh sách khách hàng theo đúng mẫu dữ liệu đầu vào.',
+      'Cấu hình nội dung, số lượng, độ trễ theo đúng nhu cầu nghiệp vụ.',
+      'Theo dõi log và trạng thái để xử lý tạm dừng/dừng khi cần.',
+    ],
+  },
+  'sms-gateway': {
+    title: 'Hướng dẫn SMS Gateway',
+    summary: 'Quản lý kết nối thiết bị SMS và gửi tin nhắn qua SIM đã cấu hình.',
+    steps: [
+      'Chọn đúng SIM và thông số kết nối trước khi bấm Kết nối.',
+      'Sau khi kết nối, dùng tab kiểm tra để xác nhận thiết bị hoạt động.',
+      'Gửi SMS thử nghiệm với số điện thoại mẫu để kiểm tra luồng gửi.',
+      'Khi kết thúc làm việc, bấm Ngắt kết nối để giải phóng thiết bị.',
+    ],
+  },
+  'admin-users': {
+    title: 'Hướng dẫn Quản Lý User',
+    summary: 'Dành cho admin để tạo, phê duyệt, cập nhật và xóa tài khoản người dùng.',
+    steps: [
+      'Tạo tài khoản mới bằng nút Thêm user với đầy đủ username và mật khẩu.',
+      'Phê duyệt tài khoản mới trước khi người dùng có thể đăng nhập hệ thống.',
+      'Cập nhật vai trò hoặc trạng thái active theo đúng chính sách nội bộ.',
+      'Chỉ xóa tài khoản không còn sử dụng để tránh ảnh hưởng lịch sử thao tác.',
+    ],
+  },
 };
 
 function App() {
@@ -88,12 +145,70 @@ function App() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePwdForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const { logs, status, progress, taskStatus, qrImage, clearLogs } = useWebSocket();
+  const { logs, status, progress, taskStatus, qrImage } = useWebSocket();
+  const lastTaskStatusRef = useRef('');
+  const lastProgressRef = useRef(-1);
+  const lastLogRef = useRef('');
+  const prevWsStatusRef = useRef('');
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   // System status — shared across header
   const [headless, setHeadless] = useState(false);
   const [sessionStatus, setSessionStatus] = useState({ is_logged_in: false, checking: true });
   const [rpaStatus, setRpaStatus] = useState({ is_running: false, is_paused: false });
+  const isAdmin = currentUser?.role === 'admin';
+  const menuItems = isAdmin
+    ? [
+        ...baseMenuItems,
+        {
+          key: 'admin-users',
+          icon: <TeamOutlined />,
+          label: 'Quản Lý User',
+        },
+      ]
+    : baseMenuItems;
+
+  const pushNotification = useCallback((entry) => {
+    const nextItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      level: entry.level || 'info',
+      text: entry.text || '',
+      createdAt: Date.now(),
+      read: isNotificationOpen,
+    };
+
+    if (!nextItem.text.trim()) return;
+
+    setNotifications(prev => [nextItem, ...prev].slice(0, 120));
+    if (!isNotificationOpen) {
+      setUnreadCount(prev => Math.min(999, prev + 1));
+    }
+
+    if (entry.important) {
+      message.open({
+        key: entry.key || `important-${nextItem.id}`,
+        type: nextItem.level,
+        content: nextItem.text,
+        duration: entry.duration ?? 3,
+      });
+    }
+  }, [isNotificationOpen]);
+
+  const handleNotificationOpenChange = (open) => {
+    setIsNotificationOpen(open);
+    if (open) {
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(item => (item.read ? item : { ...item, read: true })));
+    }
+  };
+
+  const clearNotificationHistory = () => {
+    setNotifications([]);
+    setUnreadCount(0);
+  };
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -113,14 +228,145 @@ function App() {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    authAPI.me().catch(() => {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('current_user');
-      setIsAuthenticated(false);
-      setCurrentUser(null);
+    if (!isAuthenticated || !taskStatus) return;
+
+    const taskKey = taskStatus?.data?.task || taskStatus?.task || 'unknown';
+    const dedupeKey = `${taskKey}:${taskStatus.status}`;
+    if (lastTaskStatusRef.current === dedupeKey) return;
+    lastTaskStatusRef.current = dedupeKey;
+
+    const taskLabel = TASK_LABELS[taskKey] || taskKey;
+    if (taskStatus.status === 'running' || taskStatus.status === 'active') {
+      pushNotification({
+        key: 'task-runtime',
+        level: 'info',
+        text: `${taskLabel}: đang thực thi...`,
+      });
+      return;
+    }
+
+    if (taskStatus.status === 'paused') {
+      pushNotification({
+        key: 'task-runtime',
+        level: 'warning',
+        text: `${taskLabel}: đã tạm dừng`,
+      });
+      return;
+    }
+
+    if (taskStatus.status === 'completed') {
+      pushNotification({
+        key: 'task-runtime',
+        level: 'success',
+        text: `${taskLabel}: hoàn tất`,
+      });
+      return;
+    }
+
+    if (taskStatus.status === 'error') {
+      pushNotification({
+        key: 'task-runtime',
+        level: 'error',
+        text: `${taskLabel}: xảy ra lỗi, vui lòng kiểm tra lại`,
+        important: true,
+        duration: 4,
+      });
+      return;
+    }
+
+    if (taskStatus.status === 'stopping') {
+      pushNotification({
+        key: 'task-runtime',
+        level: 'warning',
+        text: `${taskLabel}: đang dừng tác vụ...`,
+      });
+    }
+  }, [isAuthenticated, taskStatus, pushNotification]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !progress) return;
+    const percent = Number(progress.percentage || 0);
+    if (Number.isNaN(percent)) return;
+
+    const rounded = Math.max(0, Math.min(100, Math.round(percent)));
+    const shouldNotify = rounded === 100 || rounded % 20 === 0;
+    if (!shouldNotify || lastProgressRef.current === rounded) return;
+
+    lastProgressRef.current = rounded;
+    pushNotification({
+      key: `task-progress-${rounded}`,
+      level: rounded === 100 ? 'success' : 'info',
+      text: `${progress.message || 'Tiến trình'}: ${rounded}%`,
     });
+  }, [isAuthenticated, progress, pushNotification]);
+
+  useEffect(() => {
+    if (!isAuthenticated || logs.length === 0) return;
+
+    const latest = logs[logs.length - 1];
+    const logKey = `${latest.timestamp || ''}:${latest.level || ''}:${latest.message || ''}`;
+    if (lastLogRef.current === logKey) return;
+    lastLogRef.current = logKey;
+
+    const text = String(latest.message || '').trim();
+    if (!text) return;
+
+    const level = latest.level || 'info';
+    const looksLikeStep = /bước|step|dang |đang /i.test(text);
+    if (level === 'info' && !looksLikeStep) return;
+
+    const mappedLevel = level === 'error' ? 'error' : level === 'warning' ? 'warning' : level === 'success' ? 'success' : 'info';
+    pushNotification({
+      key: `ws-log-${latest.timestamp || Date.now()}`,
+      level: mappedLevel,
+      text,
+      important: mappedLevel === 'error' || mappedLevel === 'warning',
+      duration: mappedLevel === 'error' ? 4 : 3,
+    });
+  }, [isAuthenticated, logs, pushNotification]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (prevWsStatusRef.current === status) return;
+
+    if (prevWsStatusRef.current && status === 'disconnected') {
+      pushNotification({
+        key: 'ws-status-offline',
+        level: 'warning',
+        text: 'Mất kết nối backend, đang chờ kết nối lại...',
+        important: true,
+        duration: 4,
+      });
+    }
+
+    if (prevWsStatusRef.current && prevWsStatusRef.current !== 'connected' && status === 'connected') {
+      pushNotification({
+        key: 'ws-status-online',
+        level: 'success',
+        text: 'Đã kết nối lại backend',
+      });
+    }
+
+    prevWsStatusRef.current = status;
+  }, [isAuthenticated, status, pushNotification]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    authAPI.me()
+      .then(({ data }) => {
+        const user = data?.user || null;
+        if (user) {
+          setCurrentUser(user);
+          localStorage.setItem('current_user', JSON.stringify(user));
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('current_user');
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      });
   }, [isAuthenticated]);
 
   const liveRpaStatus = (() => {
@@ -238,6 +484,14 @@ function App() {
         return <Zalo taskStatus={taskStatus} />;
       case 'sms-gateway':
         return <SmsGateway />;
+      case 'admin-users':
+        return isAdmin ? <AdminUsers currentUser={currentUser} /> : <Dashboard
+          taskStatus={taskStatus} progress={progress}
+          headless={headless}
+          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
+          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
+          qrImage={qrImage}
+        />;
       default:
         return <Dashboard
           taskStatus={taskStatus} progress={progress}
@@ -277,6 +531,29 @@ function App() {
       }
     }
   };
+
+  const notificationContent = (
+    <div className="notification-panel">
+      <div className="notification-panel-header">
+        <span>Thông báo hệ thống</span>
+        <Button type="link" size="small" onClick={clearNotificationHistory}>Xóa tất cả</Button>
+      </div>
+      <div className="notification-panel-list">
+        {notifications.length === 0 ? (
+          <div className="notification-empty">Chưa có thông báo mới</div>
+        ) : (
+          notifications.map(item => (
+            <div key={item.id} className={`notification-item notification-item--${item.level} ${item.read ? 'is-read' : ''}`}>
+              <div className="notification-item-text">{item.text}</div>
+              <div className="notification-item-time">{dayjs(item.createdAt).format('HH:mm:ss DD/MM')}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const activeGuide = HELP_GUIDES[activeTab] || HELP_GUIDES.dashboard;
 
   if (!isAuthenticated) {
     return (
@@ -366,6 +643,18 @@ function App() {
             </div>
             <div className="header-right">
               <div className="header-status-group">
+                <Popover
+                  trigger="click"
+                  placement="bottomRight"
+                  overlayClassName="notification-popover"
+                  content={notificationContent}
+                  open={isNotificationOpen}
+                  onOpenChange={handleNotificationOpenChange}
+                >
+                  <Badge count={unreadCount} size="small" overflowCount={99}>
+                    <Button className="notification-bell-btn" shape="circle" icon={<BellOutlined />} />
+                  </Badge>
+                </Popover>
                 <Tooltip title={currentUser?.username || 'User'} placement="bottomRight">
                   <div className="status-pill status-pill--info" style={{ padding: '6px 10px', marginRight: 6 }}>
                     <span className="status-pill-icon"><UserOutlined /></span>
@@ -418,16 +707,6 @@ function App() {
             {renderContent()}
           </Content>
 
-          {/* Console */}
-          <div className="console-wrapper">
-            <ConsoleLog
-              logs={logs}
-              status={status}
-              progress={progress}
-              onClear={clearLogs}
-            />
-          </div>
-
           {/* Footer */}
           <footer className="app-footer">
             © 2024 automation marketing v2.0.0 - Web Edition
@@ -450,6 +729,35 @@ function App() {
           </div>
         </nav>
       </Layout>
+
+      <Tooltip title={`Hướng dẫn tab ${pageTitles[activeTab] || ''}`} placement="left">
+        <Button
+          className="help-float-btn"
+          type="primary"
+          shape="circle"
+          size="large"
+          icon={<BookOutlined />}
+          onClick={() => setIsGuideOpen(true)}
+        />
+      </Tooltip>
+
+      <Drawer
+        title={activeGuide.title}
+        placement="right"
+        open={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        width={420}
+        className="help-guide-drawer"
+      >
+        <div className="help-guide-content">
+          <p className="help-guide-summary">{activeGuide.summary}</p>
+          <ol className="help-guide-list">
+            {activeGuide.steps.map((step, idx) => (
+              <li key={`${activeGuide.title}-${idx}`}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      </Drawer>
 
       <Modal
         title="Đổi mật khẩu"
