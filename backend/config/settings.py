@@ -48,6 +48,13 @@ DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "123456")
 DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@local")
 
+# Cookie/CSRF settings
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+_cookie_samesite = os.getenv("COOKIE_SAMESITE", "lax").strip().lower()
+COOKIE_SAMESITE = _cookie_samesite if _cookie_samesite in {"lax", "strict", "none"} else "lax"
+CSRF_COOKIE_NAME = os.getenv("CSRF_COOKIE_NAME", "csrf_token")
+CSRF_HEADER_NAME = os.getenv("CSRF_HEADER_NAME", "X-CSRF-Token")
+
 # Zalo session
 ZALO_SESSION_DIR = APP_DATA_DIR / "zalo_session"
 ZALO_ACCOUNTS_FILE = APP_DATA_DIR / "zalo_accounts.json"

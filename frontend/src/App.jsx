@@ -134,14 +134,9 @@ const HELP_GUIDES = {
 };
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('access_token')));
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('current_user') || 'null');
-    } catch {
-      return null;
-    }
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePwdForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -160,6 +155,7 @@ function App() {
   const [sessionStatus, setSessionStatus] = useState({ is_logged_in: false, checking: true });
   const [rpaStatus, setRpaStatus] = useState({ is_running: false, is_paused: false });
   const isAdmin = currentUser?.role === 'admin';
+  const userStorageKey = currentUser?.id ? `uid_${currentUser.id}` : (currentUser?.username ? `u_${currentUser.username}` : 'guest');
   const menuItems = isAdmin
     ? [
         ...baseMenuItems,
@@ -196,6 +192,29 @@ function App() {
       });
     }
   }, [isNotificationOpen]);
+
+  useEffect(() => {
+    let mounted = true;
+    authAPI.me()
+      .then(({ data }) => {
+        if (!mounted) return;
+        const user = data?.user || null;
+        setCurrentUser(user);
+        setIsAuthenticated(Boolean(user));
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+      })
+      .finally(() => {
+        if (mounted) setIsAuthChecking(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleNotificationOpenChange = (open) => {
     setIsNotificationOpen(open);
@@ -285,6 +304,7 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !progress) return;
+    if (String(progress.message || '').includes('Đang xử lý:')) return;
     const percent = Number(progress.percentage || 0);
     if (Number.isNaN(percent)) return;
 
@@ -310,6 +330,9 @@ function App() {
 
     const text = String(latest.message || '').trim();
     if (!text) return;
+
+    const isPerCustomerRealtime = /(\[[0-9]+\/[0-9]+\].*(Kết bạn|gửi|Thất bại|Đã là bạn bè)|Đang xử lý:\s*[0-9]{8,15})/i.test(text);
+    if (isPerCustomerRealtime) return;
 
     const level = latest.level || 'info';
     const looksLikeStep = /bước|step|dang |đang /i.test(text);
@@ -357,13 +380,9 @@ function App() {
         const user = data?.user || null;
         if (user) {
           setCurrentUser(user);
-          localStorage.setItem('current_user', JSON.stringify(user));
         }
       })
       .catch(() => {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('current_user');
         setIsAuthenticated(false);
         setCurrentUser(null);
       });
@@ -468,53 +487,34 @@ function App() {
     setActiveTab(e.key);
   };
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard
-          taskStatus={taskStatus} progress={progress}
-          headless={headless}
-          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
-          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
-          qrImage={qrImage}
-        />;
-      case 'tasks':
-        return <Tasks taskStatus={taskStatus} progress={progress} />;
-      case 'zalo':
-        return <Zalo taskStatus={taskStatus} />;
-      case 'sms-gateway':
-        return <SmsGateway />;
-      case 'admin-users':
-        return isAdmin ? <AdminUsers currentUser={currentUser} /> : <Dashboard
-          taskStatus={taskStatus} progress={progress}
-          headless={headless}
-          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
-          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
-          qrImage={qrImage}
-        />;
-      default:
-        return <Dashboard
-          taskStatus={taskStatus} progress={progress}
-          headless={headless}
-          sessionStatus={liveSessionStatus} onVerifySession={handleVerifySession}
-          onSessionUpdate={setSessionStatus} rpaStatus={liveRpaStatus}
-          qrImage={qrImage}
-        />;
-    }
-  };
+  const dashboardView = (
+    <Dashboard
+      taskStatus={taskStatus}
+      progress={progress}
+      headless={headless}
+      sessionStatus={liveSessionStatus}
+      onVerifySession={handleVerifySession}
+      onSessionUpdate={setSessionStatus}
+      rpaStatus={liveRpaStatus}
+      qrImage={qrImage}
+    />
+  );
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user || null);
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('current_user');
-    setCurrentUser(null);
-    setIsAuthenticated(false);
-    message.info('Đã đăng xuất');
+  const handleLogout = async () => {
+    try {
+      await authAPI.logout();
+    } catch (error) {
+      console.debug('Logout request failed:', error);
+    } finally {
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      message.info('Đã đăng xuất');
+    }
   };
 
   const handleChangePassword = async () => {
@@ -554,6 +554,16 @@ function App() {
   );
 
   const activeGuide = HELP_GUIDES[activeTab] || HELP_GUIDES.dashboard;
+
+  if (isAuthChecking) {
+    return (
+      <ConfigProvider locale={viVN} theme={{ algorithm: theme.darkAlgorithm }}>
+        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#e2e8f0' }}>
+          Đang xác thực phiên đăng nhập...
+        </div>
+      </ConfigProvider>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
@@ -604,11 +614,11 @@ function App() {
         <Sider className="app-sidebar" width={260}>
           <div className="sidebar-logo">
             <div className="sidebar-logo-icon">
-              <RobotOutlined />
+              <ThunderboltOutlined />
             </div>
             <div className="sidebar-logo-text">
-              <span className="sidebar-logo-brand">automation marketing</span>
-              <span className="sidebar-logo-sub">RPA Automation</span>
+              <span className="sidebar-logo-brand">Automation Marketing</span>
+              <span className="sidebar-logo-sub">Hệ thống Automnation</span>
             </div>
           </div>
 
@@ -703,13 +713,30 @@ function App() {
           </header>
 
           {/* Content */}
-          <Content className="app-content fade-in" key={activeTab}>
-            {renderContent()}
+          <Content className="app-content fade-in">
+            <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
+              {dashboardView}
+            </div>
+            <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
+              <Tasks taskStatus={taskStatus} progress={progress} userStorageKey={userStorageKey} />
+            </div>
+            <div style={{ display: activeTab === 'zalo' ? 'block' : 'none' }}>
+              <Zalo taskStatus={taskStatus} logs={logs} progress={progress} userStorageKey={userStorageKey} />
+            </div>
+            <div style={{ display: activeTab === 'sms-gateway' ? 'block' : 'none' }}>
+              <SmsGateway userStorageKey={userStorageKey} />
+            </div>
+            {isAdmin && (
+              <div style={{ display: activeTab === 'admin-users' ? 'block' : 'none' }}>
+                <AdminUsers currentUser={currentUser} />
+              </div>
+            )}
           </Content>
 
           {/* Footer */}
           <footer className="app-footer">
-            © 2024 automation marketing v2.0.0 - Web Edition
+            <div>© 2026 Automation Marketing v2.0.0 - Web Edition</div>
+            <div className="app-footer-credit">Trang web được phát triển bởi Huỳnh Hải Đăng</div>
           </footer>
         </div>
 

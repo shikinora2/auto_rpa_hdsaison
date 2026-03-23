@@ -16,26 +16,83 @@ const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || `${_wsProto}://${_wsHost
 const api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 30000,
+    withCredentials: true,
     headers: {
         'Content-Type': 'application/json',
     },
 });
 
+function readCookie(name) {
+    if (typeof document === 'undefined') return null;
+    const pattern = `; ${document.cookie}`;
+    const parts = pattern.split(`; ${name}=`);
+    if (parts.length !== 2) return null;
+    return decodeURIComponent(parts.pop().split(';').shift());
+}
+
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    const method = String(config?.method || 'get').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+        const csrfToken = readCookie('csrf_token');
+        if (csrfToken) {
+            config.headers = config.headers || {};
+            config.headers['X-CSRF-Token'] = csrfToken;
+        }
     }
     return config;
 });
 
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function subscribeTokenRefresh(resolve, reject) {
+    refreshSubscribers.push({ resolve, reject });
+}
+
+function notifyTokenRefreshed() {
+    refreshSubscribers.forEach(({ resolve }) => resolve());
+    refreshSubscribers = [];
+}
+
+function notifyRefreshFailed(error) {
+    refreshSubscribers.forEach(({ reject }) => reject(error));
+    refreshSubscribers = [];
+}
+
 api.interceptors.response.use(
     (response) => response,
-    (error) => {
-        if (error?.response?.status === 401) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('current_user');
+    async (error) => {
+        const originalRequest = error?.config;
+        const statusCode = error?.response?.status;
+        const requestUrl = originalRequest?.url || '';
+        const isAuthPath = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/register') || requestUrl.includes('/auth/refresh');
+
+        if (statusCode === 401 && originalRequest && !originalRequest._retry && !isAuthPath) {
+            if (isRefreshing) {
+                return new Promise((resolve, reject) => {
+                    subscribeTokenRefresh(
+                        () => {
+                            resolve(api(originalRequest));
+                        },
+                        (refreshError) => reject(refreshError)
+                    );
+                });
+            }
+
+            originalRequest._retry = true;
+            isRefreshing = true;
+
+            try {
+                await api.post('/auth/refresh', {});
+
+                notifyTokenRefreshed();
+                return api(originalRequest);
+            } catch (refreshError) {
+                notifyRefreshFailed(refreshError);
+                return Promise.reject(refreshError);
+            } finally {
+                isRefreshing = false;
+            }
         }
         return Promise.reject(error);
     }
@@ -46,11 +103,17 @@ api.interceptors.response.use(
 export const authAPI = {
     register: (data) => api.post('/auth/register', data),
     login: (data) => api.post('/auth/login', data),
+    logout: () => api.post('/auth/logout'),
     refresh: (data) => api.post('/auth/refresh', data),
     me: () => api.get('/auth/me'),
     changePassword: (data) => api.post('/auth/change-password', data),
     forgotPassword: (data) => api.post('/auth/forgot-password', data),
     resetPassword: (data) => api.post('/auth/reset-password', data),
+    listUsers: () => api.get('/auth/users'),
+    createUser: (data) => api.post('/auth/users', data),
+    approveUser: (userId) => api.post(`/auth/users/${userId}/approve`),
+    updateUser: (userId, data) => api.patch(`/auth/users/${userId}`, data),
+    deleteUser: (userId) => api.delete(`/auth/users/${userId}`),
 };
 
 // ============== Config API ==============
@@ -125,7 +188,12 @@ export const filesAPI = {
     list: (directory = 'downloads') => api.get('/files/list', { params: { directory } }),
     listDownloads: () => api.get('/files/list', { params: { directory: 'downloads' } }),
     download: (filename, directory = 'downloads') =>
-        `${API_BASE_URL}/files/download/${filename}?directory=${directory}`,
+        `${API_BASE_URL}/files/download/${encodeURIComponent(filename)}?directory=${encodeURIComponent(directory)}`,
+    downloadFile: (filename, directory = 'downloads') =>
+        api.get(`/files/download/${encodeURIComponent(filename)}`, {
+            params: { directory },
+            responseType: 'blob',
+        }),
     delete: (filename, directory = 'uploads') =>
         api.delete(`/files/${filename}`, { params: { directory } }),
     templateUrl: () => `${API_BASE_URL}/files/template`,

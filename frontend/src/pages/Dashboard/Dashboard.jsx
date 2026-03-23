@@ -31,7 +31,7 @@ import '../Zalo/Zalo.css';
 const TASK_LABELS = {
     check_contracts: 'Kiểm tra HĐ',
     download_files: 'Tải file PDF/JSON',
-    scrape_details: 'Cào chi tiết → Excel',
+    scrape_details: 'Lấy dữ liệu hợp đồng → Excel',
     login: 'Đăng nhập HPO',
     zalo_login: 'Login Zalo',
     send_messages: 'Gửi tin nhắn Zalo',
@@ -47,6 +47,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     const [zaloLoading, setZaloLoading] = useState(false);
     const [localQrBase64, setLocalQrBase64] = useState(null);
     const pollRef = useRef(null);
+    const zaloLoginRequestedRef = useRef(false);
 
     const loadConfig = useCallback(async () => {
         try {
@@ -141,6 +142,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
         if (task === 'zalo_session' && (st === 'active' || st === 'session_state')) {
             setZaloLoading(false);
             setLocalQrBase64(null);
+            zaloLoginRequestedRef.current = false;
             stopSessionPolling();
             loadZaloSession();
             if (st === 'active') {
@@ -152,12 +154,16 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
             setLocalQrBase64(null);
             stopSessionPolling();
             loadZaloSession();
-            if (st === 'error') {
+            if (st === 'error' && zaloLoginRequestedRef.current) {
                 message.error('Đăng nhập Zalo thất bại hoặc hết thời gian quét QR.');
             }
+            zaloLoginRequestedRef.current = false;
         }
         if (isZaloTask && (st === 'completed' || st === 'error' || st === 'stopping')) {
             setZaloLoading(false);
+            if (st === 'error') {
+                zaloLoginRequestedRef.current = false;
+            }
             stopSessionPolling();
         }
     }, [taskStatus, loadZaloSession, stopSessionPolling]);
@@ -202,6 +208,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
         stopSessionPolling();
         setLocalQrBase64(null);
         setZaloLoading(true);
+        zaloLoginRequestedRef.current = true;
         try {
             await zaloAPI.login();
             message.info('Đã gửi yêu cầu lấy mã QR Zalo. Vui lòng chờ mã hiển thị và quét để đăng nhập.');
@@ -217,6 +224,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
             }
             message.error(error.response?.data?.detail || 'Không thể đăng nhập Zalo');
             setZaloLoading(false);
+            zaloLoginRequestedRef.current = false;
         }
     };
 

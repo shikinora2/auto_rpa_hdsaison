@@ -31,8 +31,28 @@ rpa_state = {
     "stop_event": threading.Event()
 }
 
+_rpa_state_lock = threading.Lock()
+
 # Set pause_event để mặc định không pause
 rpa_state["pause_event"].set()
+
+
+def _start_rpa_task(task_name: str):
+    with _rpa_state_lock:
+        if rpa_state["is_running"]:
+            raise HTTPException(status_code=400, detail="Another RPA task is already running")
+        rpa_state["stop_event"].clear()
+        rpa_state["pause_event"].set()
+        rpa_state["is_running"] = True
+        rpa_state["is_paused"] = False
+        rpa_state["current_task"] = task_name
+
+
+def _finish_rpa_task():
+    with _rpa_state_lock:
+        rpa_state["is_running"] = False
+        rpa_state["is_paused"] = False
+        rpa_state["current_task"] = None
 
 
 class RPARequest(BaseModel):
@@ -91,10 +111,16 @@ def _create_task_zip_artifact(save_directory: str, start_date_ddmmyyyy: str, tas
 @router.get("/status")
 async def get_status():
     """Lấy trạng thái hiện tại của RPA"""
+    with _rpa_state_lock:
+        state = {
+            "is_running": rpa_state["is_running"],
+            "is_paused": rpa_state["is_paused"],
+            "current_task": rpa_state["current_task"],
+        }
     return {
-        "is_running": rpa_state["is_running"],
-        "is_paused": rpa_state["is_paused"],
-        "current_task": rpa_state["current_task"]
+        "is_running": state["is_running"],
+        "is_paused": state["is_paused"],
+        "current_task": state["current_task"]
     }
 
 
@@ -104,9 +130,6 @@ async def check_contracts(request: RPARequest, background_tasks: BackgroundTasks
     Kiểm tra số lượng hợp đồng trong khoảng thời gian
     Chạy trong background task
     """
-    if rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another RPA task is already running")
-    
     # Lấy credentials từ config nếu không có trong request
     config = load_config()
     username = request.username or config.get("username", "")
@@ -116,12 +139,7 @@ async def check_contracts(request: RPARequest, background_tasks: BackgroundTasks
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
     
-    # Reset events
-    rpa_state["stop_event"].clear()
-    rpa_state["pause_event"].set()
-    rpa_state["is_running"] = True
-    rpa_state["is_paused"] = False
-    rpa_state["current_task"] = "check_contracts"
+    _start_rpa_task("check_contracts")
     
     # Chạy trong background
     background_tasks.add_task(
@@ -174,8 +192,7 @@ async def run_check_contracts_task(username, password, start_date, end_date, hea
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "check_contracts", "error": str(e)})
     finally:
-        rpa_state["is_running"] = False
-        rpa_state["current_task"] = None
+        _finish_rpa_task()
 
 
 @router.post("/download-files")
@@ -184,9 +201,6 @@ async def download_files(request: DownloadRequest, background_tasks: BackgroundT
     Tải file PDF/JSON từ hệ thống
     Chạy trong background task
     """
-    if rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another RPA task is already running")
-    
     config = load_config()
     username = request.username or config.get("username", "")
     password = request.password or config.get("password", "")
@@ -197,12 +211,7 @@ async def download_files(request: DownloadRequest, background_tasks: BackgroundT
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
     
-    # Reset events
-    rpa_state["stop_event"].clear()
-    rpa_state["pause_event"].set()
-    rpa_state["is_running"] = True
-    rpa_state["is_paused"] = False
-    rpa_state["current_task"] = "download_files"
+    _start_rpa_task("download_files")
     
     background_tasks.add_task(
         run_download_files_task,
@@ -262,8 +271,7 @@ async def run_download_files_task(username, password, start_date, end_date,
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "download_files", "error": str(e)})
     finally:
-        rpa_state["is_running"] = False
-        rpa_state["current_task"] = None
+        _finish_rpa_task()
 
 
 @router.post("/scrape-details")
@@ -271,9 +279,6 @@ async def scrape_details(request: DownloadRequest, background_tasks: BackgroundT
     """
     Cào chi tiết hợp đồng và xuất Excel
     """
-    if rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another RPA task is already running")
-    
     config = load_config()
     username = request.username or config.get("username", "")
     password = request.password or config.get("password", "")
@@ -283,11 +288,7 @@ async def scrape_details(request: DownloadRequest, background_tasks: BackgroundT
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password are required")
     
-    rpa_state["stop_event"].clear()
-    rpa_state["pause_event"].set()
-    rpa_state["is_running"] = True
-    rpa_state["is_paused"] = False
-    rpa_state["current_task"] = "scrape_details"
+    _start_rpa_task("scrape_details")
     
     background_tasks.add_task(
         run_scrape_details_task,
@@ -345,24 +346,23 @@ async def run_scrape_details_task(username, password, start_date, end_date,
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "scrape_details", "error": str(e)})
     finally:
-        rpa_state["is_running"] = False
-        rpa_state["current_task"] = None
+        _finish_rpa_task()
 
 
 @router.post("/pause")
 async def pause_rpa():
     """Tạm dừng RPA task đang chạy"""
-    if not rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No RPA task is running")
-    
-    if rpa_state["is_paused"]:
-        raise HTTPException(status_code=400, detail="Task is already paused")
-    
-    rpa_state["pause_event"].clear()
-    rpa_state["is_paused"] = True
+    with _rpa_state_lock:
+        if not rpa_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No RPA task is running")
+        if rpa_state["is_paused"]:
+            raise HTTPException(status_code=400, detail="Task is already paused")
+        rpa_state["pause_event"].clear()
+        rpa_state["is_paused"] = True
+        current_task = rpa_state["current_task"]
     
     await log_to_ws("Đã tạm dừng tác vụ", "warning")
-    await manager.broadcast_status("paused", {"task": rpa_state["current_task"]})
+    await manager.broadcast_status("paused", {"task": current_task})
     
     return {"status": "paused", "message": "RPA task paused"}
 
@@ -370,17 +370,17 @@ async def pause_rpa():
 @router.post("/resume")
 async def resume_rpa():
     """Tiếp tục RPA task đang tạm dừng"""
-    if not rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No RPA task is running")
-    
-    if not rpa_state["is_paused"]:
-        raise HTTPException(status_code=400, detail="Task is not paused")
-    
-    rpa_state["pause_event"].set()
-    rpa_state["is_paused"] = False
+    with _rpa_state_lock:
+        if not rpa_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No RPA task is running")
+        if not rpa_state["is_paused"]:
+            raise HTTPException(status_code=400, detail="Task is not paused")
+        rpa_state["pause_event"].set()
+        rpa_state["is_paused"] = False
+        current_task = rpa_state["current_task"]
     
     await log_to_ws("Đã tiếp tục tác vụ", "info")
-    await manager.broadcast_status("running", {"task": rpa_state["current_task"]})
+    await manager.broadcast_status("running", {"task": current_task})
     
     return {"status": "resumed", "message": "RPA task resumed"}
 
@@ -388,14 +388,15 @@ async def resume_rpa():
 @router.post("/stop")
 async def stop_rpa():
     """Dừng hẳn RPA task đang chạy"""
-    if not rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No RPA task is running")
-    
-    rpa_state["stop_event"].set()
-    rpa_state["pause_event"].set()  # Đảm bảo không bị block
+    with _rpa_state_lock:
+        if not rpa_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No RPA task is running")
+        rpa_state["stop_event"].set()
+        rpa_state["pause_event"].set()  # Đảm bảo không bị block
+        current_task = rpa_state["current_task"]
     
     await log_to_ws("Đang dừng tác vụ...", "warning")
-    await manager.broadcast_status("stopping", {"task": rpa_state["current_task"]})
+    await manager.broadcast_status("stopping", {"task": current_task})
     
     return {"status": "stopping", "message": "RPA task is being stopped"}
 
@@ -446,11 +447,7 @@ async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks, cu
     Đăng nhập vào HPO và lưu session
     Session được lưu để các lần chạy sau không cần đăng nhập lại
     """
-    if rpa_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Có task RPA đang chạy")
-    
-    rpa_state["is_running"] = True
-    rpa_state["current_task"] = "login"
+    _start_rpa_task("login")
     
     background_tasks.add_task(
         run_login_task,
@@ -497,8 +494,7 @@ async def run_login_task(user_id: int, username: str, password: str, headless: b
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "login", "error": str(e)})
     finally:
-        rpa_state["is_running"] = False
-        rpa_state["current_task"] = None
+        _finish_rpa_task()
 
 
 @router.post("/logout")

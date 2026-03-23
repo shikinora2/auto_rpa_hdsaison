@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import dayjs from 'dayjs';
 import {
     Card,
     Form,
@@ -21,6 +22,7 @@ import {
     InfoCircleOutlined,
 } from '@ant-design/icons';
 import { configAPI, rpaAPI, filesAPI } from '../../services/api';
+import useUserPersistentState from '../../hooks/useUserPersistentState';
 import './Tasks.css';
 
 const { RangePicker } = DatePicker;
@@ -34,15 +36,21 @@ const TASK_MAP = {
 const TASK_LABELS = {
     check_contracts: 'Kiểm tra HĐ',
     download_files: 'Tải file',
-    scrape_details: 'Cào chi tiết',
+    scrape_details: 'Lấy dữ liệu hợp đồng',
 };
 
-function Tasks({ taskStatus, progress }) {
+function Tasks({ taskStatus, progress, userStorageKey }) {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState({ check: false, download: false, scrape: false });
     const [sessionStatus, setSessionStatus] = useState(null);
     const [currentTask, setCurrentTask] = useState(null);
     const downloadedArtifactsRef = useRef(new Set());
+    const restoredFormRef = useRef(false);
+    const [persistedTaskForm, setPersistedTaskForm] = useUserPersistentState(userStorageKey, 'tasks.form', {
+        start_date: '',
+        end_date: '',
+        save_format: 'PDF',
+    });
 
     const checkSession = useCallback(async () => {
         // Fast path: trả về trạng thái cache, không mở browser (dùng khi trang load)
@@ -59,12 +67,12 @@ function Tasks({ taskStatus, progress }) {
         try {
             const { data } = await configAPI.get();
             form.setFieldsValue({
-                save_format: data.save_format || 'PDF',
+                save_format: persistedTaskForm.save_format || data.save_format || 'PDF',
             });
         } catch (error) {
             console.error('Failed to load config:', error);
         }
-    }, [form]);
+    }, [form, persistedTaskForm.save_format]);
 
     const triggerArtifactDownload = useCallback((artifactFilename) => {
         if (!artifactFilename) return;
@@ -89,6 +97,24 @@ function Tasks({ taskStatus, progress }) {
         loadConfig();
         checkSession();
     }, [loadConfig, checkSession]);
+
+    useEffect(() => {
+        if (restoredFormRef.current) return;
+        restoredFormRef.current = true;
+
+        const values = {
+            save_format: persistedTaskForm.save_format || 'PDF',
+        };
+
+        if (persistedTaskForm.start_date && persistedTaskForm.end_date) {
+            values.date_range = [
+                dayjs(persistedTaskForm.start_date, 'DDMMYYYY'),
+                dayjs(persistedTaskForm.end_date, 'DDMMYYYY'),
+            ];
+        }
+
+        form.setFieldsValue(values);
+    }, [form, persistedTaskForm]);
 
     useEffect(() => {
         if (!taskStatus) return;
@@ -180,9 +206,9 @@ function Tasks({ taskStatus, progress }) {
         setLoading(prev => ({ ...prev, scrape: true }));
         try {
             await rpaAPI.scrapeDetails(data);
-            message.success('Đã bắt đầu cào chi tiết');
+            message.success('Đã bắt đầu lấy dữ liệu hợp đồng');
         } catch (error) {
-            message.error(error.response?.data?.detail || 'Không thể bắt đầu cào');
+            message.error(error.response?.data?.detail || 'Không thể bắt đầu lấy dữ liệu hợp đồng');
             setLoading(prev => ({ ...prev, scrape: false }));
         }
     };
@@ -236,7 +262,20 @@ function Tasks({ taskStatus, progress }) {
                 }
                 className="tasks-card"
             >
-                <Form form={form} layout="vertical" initialValues={{ save_format: 'PDF' }} disabled={isLocked}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    initialValues={{ save_format: 'PDF' }}
+                    disabled={isLocked}
+                    onValuesChange={(_, allValues) => {
+                        const range = allValues.date_range || [];
+                        setPersistedTaskForm({
+                            start_date: range[0] ? range[0].format('DDMMYYYY') : '',
+                            end_date: range[1] ? range[1].format('DDMMYYYY') : '',
+                            save_format: allValues.save_format || 'PDF',
+                        });
+                    }}
+                >
                     <Row gutter={16}>
                         <Col xs={24} md={14}>
                             <Form.Item
@@ -331,7 +370,7 @@ function Tasks({ taskStatus, progress }) {
                                     <FileExcelOutlined />
                                 </div>
                                 <div className="task-action-info">
-                                    <div className="task-action-title">Cào chi tiết → Excel</div>
+                                    <div className="task-action-title">Lấy dữ liệu hợp đồng → Excel</div>
                                     <div className="task-action-desc">
                                         Thu thập chi tiết từng HĐ và xuất Excel. Hệ thống tự lưu và tự tải file kết quả.
                                     </div>
@@ -345,7 +384,7 @@ function Tasks({ taskStatus, progress }) {
                                     size="large"
                                     className="task-action-btn task-action-btn--excel"
                                 >
-                                    {loading.scrape ? 'Đang cào...' : 'Cào → Excel'}
+                                    {loading.scrape ? 'Đang lấy dữ liệu hợp đồng...' : 'Lấy dữ liệu → Excel'}
                                 </Button>
                             </div>
                         </Col>

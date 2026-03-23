@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import asyncio
 import concurrent.futures
+import threading
 import time
 from playwright.sync_api import sync_playwright
 from datetime import datetime
@@ -41,7 +42,8 @@ def _get_cached_qr(user_id: int) -> str | None:
         return None
 
     # Khi task login đang chạy, luôn giữ QR cache để FE không mất ảnh giữa chừng
-    if zalo_state.get("is_running") and _is_zalo_login_task(zalo_state.get("current_task")):
+    state = _snapshot_zalo_state()
+    if state.get("is_running") and _is_zalo_login_task(state.get("current_task")):
         return entry["qr_base64"]
 
     if time.time() - entry["ts"] < _QR_TTL:
@@ -66,6 +68,37 @@ zalo_state = {
     "session_active": False,   # True nếu đã login và session disk còn hợp lệ
     "zalo_name": "",
 }
+
+_zalo_state_lock = threading.Lock()
+
+
+def _snapshot_zalo_state() -> dict:
+    with _zalo_state_lock:
+        return {
+            "is_running": zalo_state["is_running"],
+            "is_paused": zalo_state["is_paused"],
+            "stop_requested": zalo_state["stop_requested"],
+            "current_task": zalo_state["current_task"],
+            "session_active": zalo_state["session_active"],
+            "zalo_name": zalo_state["zalo_name"],
+        }
+
+
+def _start_zalo_task(task_name: str):
+    with _zalo_state_lock:
+        if zalo_state["is_running"]:
+            raise HTTPException(status_code=400, detail="Another Zalo task is running")
+        zalo_state["is_running"] = True
+        zalo_state["is_paused"] = False
+        zalo_state["stop_requested"] = False
+        zalo_state["current_task"] = task_name
+
+
+def _finish_zalo_task():
+    with _zalo_state_lock:
+        zalo_state["is_running"] = False
+        zalo_state["is_paused"] = False
+        zalo_state["current_task"] = None
 
 
 
@@ -177,7 +210,7 @@ async def resolve_session_state(user_id: int, verify: bool = False) -> dict:
     # Tránh đụng session directory khi bất kỳ task nào đang chạy browser trên cùng account.
     # Nếu đang login (QR), send_messages, hay add_friends — không mở thêm browser verify
     # vì sẽ bị data race với persistent context đang hoạt động.
-    if zalo_state["is_running"]:
+    if _snapshot_zalo_state()["is_running"]:
         return session_state
 
     if not has_session:
@@ -230,10 +263,11 @@ async def get_session_status(verify: bool = False, current_user=Depends(require_
     """
     session_state = await resolve_session_state(current_user["id"], verify=verify)
 
+    state = _snapshot_zalo_state()
     return {
         "is_active": session_state["session_active"],
-        "is_running": zalo_state["is_running"],
-        "current_task": zalo_state["current_task"],
+        "is_running": state["is_running"],
+        "current_task": state["current_task"],
         "zalo_name": session_state["zalo_name"],
     }
 
@@ -244,15 +278,10 @@ async def login_zalo(background_tasks: BackgroundTasks, current_user=Depends(req
     Mở trình duyệt để đăng nhập Zalo (quét QR)
     Browser sẽ mở ở chế độ headful để người dùng quét QR
     """
-    if zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another Zalo task is running")
-
     # Mỗi lần yêu cầu đăng nhập mới phải xoá QR cũ để FE không hiển thị ảnh stale sau F5.
     _clear_qr_cache(current_user["id"])
 
-    zalo_state["is_running"] = True
-    zalo_state["current_task"] = "zalo_login"
-    zalo_state["stop_requested"] = False
+    _start_zalo_task("zalo_login")
     
     background_tasks.add_task(run_zalo_login_task, current_user["id"])
     
@@ -559,12 +588,12 @@ async def run_zalo_login_task(user_id: int):
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "zalo_login", "error": str(e)})
     finally:
-        zalo_state["is_running"] = False
-        zalo_state["current_task"] = None
+        _finish_zalo_task()
+        state = _snapshot_zalo_state()
         await manager.broadcast_status("session_state", {
             "task": "zalo_session",
-            "session_active": zalo_state["session_active"],
-            "zalo_name": zalo_state["zalo_name"],
+            "session_active": state["session_active"],
+            "zalo_name": state["zalo_name"],
         })
 
 
@@ -592,10 +621,11 @@ async def get_qr_image(current_user=Depends(require_roles("admin", "user"))):
     FE nên gọi endpoint này sau khi xác nhận session chưa đăng nhập.
     """
     qr_b64 = _get_cached_qr(current_user["id"])
+    state = _snapshot_zalo_state()
     return {
         "qr_base64": qr_b64,
-        "is_running": zalo_state["is_running"],
-        "current_task": zalo_state["current_task"],
+        "is_running": state["is_running"],
+        "current_task": state["current_task"],
     }
 
 
@@ -604,9 +634,6 @@ async def get_qr_image(current_user=Depends(require_roles("admin", "user"))):
 @router.post("/send-messages")
 async def send_messages(request: SendMessageRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """Gửi tin nhắn hàng loạt"""
-    if zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another Zalo task is running")
-
     session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
         raise HTTPException(status_code=400, detail="Please login to Zalo first")
@@ -618,10 +645,7 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
     if not valid_customers:
         raise HTTPException(status_code=400, detail="Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ")
     
-    zalo_state["is_running"] = True
-    zalo_state["is_paused"] = False
-    zalo_state["stop_requested"] = False
-    zalo_state["current_task"] = "send_messages"
+    _start_zalo_task("send_messages")
     
     background_tasks.add_task(
         run_send_messages_task,
@@ -720,16 +744,12 @@ async def run_send_messages_task(user_id, customers, message_template, check_fri
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "send_messages", "error": str(e)})
     finally:
-        zalo_state["is_running"] = False
-        zalo_state["current_task"] = None
+        _finish_zalo_task()
 
 
 @router.post("/add-friends")
 async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
     """Kết bạn hàng loạt"""
-    if zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="Another Zalo task is running")
-
     session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
         raise HTTPException(status_code=400, detail="Please login to Zalo first")
@@ -741,10 +761,7 @@ async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTas
     if not valid_customers:
         raise HTTPException(status_code=400, detail="Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ")
     
-    zalo_state["is_running"] = True
-    zalo_state["is_paused"] = False
-    zalo_state["stop_requested"] = False
-    zalo_state["current_task"] = "add_friends"
+    _start_zalo_task("add_friends")
     
     background_tasks.add_task(
         run_add_friends_task,
@@ -962,20 +979,20 @@ async def run_add_friends_task(user_id, customers, greeting_template):
         await log_to_ws(f"Lỗi: {str(e)}", "error")
         await manager.broadcast_status("error", {"task": "add_friends", "error": str(e)})
     finally:
-        zalo_state["is_running"] = False
-        zalo_state["current_task"] = None
+        _finish_zalo_task()
 
 
 @router.post("/stop")
 async def stop_zalo():
     """Dừng hẳn Zalo task đang chạy"""
-    if not zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No Zalo task is running")
-
-    zalo_state["stop_requested"] = True
-    zalo_state["is_paused"] = False  # Mở khóa pause loop nếu đang pause
+    with _zalo_state_lock:
+        if not zalo_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No Zalo task is running")
+        zalo_state["stop_requested"] = True
+        zalo_state["is_paused"] = False  # Mở khóa pause loop nếu đang pause
+        current_task = zalo_state["current_task"]
     await log_to_ws("Đang dừng tác vụ Zalo...", "warning")
-    await manager.broadcast_status("stopping", {"task": zalo_state["current_task"]})
+    await manager.broadcast_status("stopping", {"task": current_task})
 
     return {"status": "stopping", "message": "Zalo task is being stopped"}
 
@@ -983,12 +1000,13 @@ async def stop_zalo():
 @router.post("/pause")
 async def pause_zalo():
     """Tạm dừng Zalo task"""
-    if not zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No Zalo task is running")
-    
-    zalo_state["is_paused"] = True
+    with _zalo_state_lock:
+        if not zalo_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No Zalo task is running")
+        zalo_state["is_paused"] = True
+        current_task = zalo_state["current_task"]
     await log_to_ws("Đã tạm dừng", "warning")
-    await manager.broadcast_status("paused", {"task": zalo_state["current_task"]})
+    await manager.broadcast_status("paused", {"task": current_task})
     
     return {"status": "paused"}
 
@@ -996,11 +1014,12 @@ async def pause_zalo():
 @router.post("/resume")
 async def resume_zalo():
     """Tiếp tục Zalo task"""
-    if not zalo_state["is_running"]:
-        raise HTTPException(status_code=400, detail="No Zalo task is running")
-    
-    zalo_state["is_paused"] = False
+    with _zalo_state_lock:
+        if not zalo_state["is_running"]:
+            raise HTTPException(status_code=400, detail="No Zalo task is running")
+        zalo_state["is_paused"] = False
+        current_task = zalo_state["current_task"]
     await log_to_ws("Đã tiếp tục", "info")
-    await manager.broadcast_status("running", {"task": zalo_state["current_task"]})
+    await manager.broadcast_status("running", {"task": current_task})
     
     return {"status": "resumed"}

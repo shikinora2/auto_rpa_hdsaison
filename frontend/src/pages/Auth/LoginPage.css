@@ -1,0 +1,71 @@
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 10% 0%, rgba(59, 130, 246, 0.28), transparent 60%),
+    radial-gradient(1000px 520px at 100% 100%, rgba(16, 185, 129, 0.2), transparent 60%),
+    linear-gradient(180deg, #0b1221 0%, #0f172a 100%);
+}
+
+.login-card {
+  width: 520px;
+  max-width: 100%;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.login-title {
+  margin: 0 !important;
+  color: #f8fafc !important;
+}
+
+.login-subtitle {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.login-security-note {
+  color: #93c5fd;
+  font-size: 12px;
+}
+
+.login-security-note .ant-typography {
+  color: #93c5fd;
+  margin: 0;
+  font-size: 12px;
+}
+
+.login-tabs .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.login-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-admin-alert,
+.login-register-alert {
+  border-radius: 10px;
+}
+
+.login-primary-btn {
+  height: 42px;
+  border-radius: 10px;
+}
+
+@media (max-width: 576px) {
+  .login-page {
+    padding: 14px;
+  }
+
+  .login-card {
+    width: 100%;
+    border-radius: 12px;
+  }
+}

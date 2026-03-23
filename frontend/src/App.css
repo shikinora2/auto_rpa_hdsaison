@@ -48,13 +48,14 @@
   height: 38px;
   border-radius: 10px;
   background: var(--hz-brand-gradient);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 19px;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: var(--hz-shadow-brand);
+  box-shadow: var(--hz-shadow-brand), 0 0 14px rgba(129, 140, 248, 0.25);
 }
 
 .sidebar-logo-text {
@@ -64,18 +65,18 @@
 }
 
 .sidebar-logo-brand {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--hz-text-primary);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.2px;
   line-height: 1.2;
 }
 
 .sidebar-logo-sub {
   font-size: 11px;
   color: var(--hz-text-muted);
-  font-weight: 400;
-  letter-spacing: 0.3px;
+  font-weight: 500;
+  letter-spacing: 0.15px;
 }
 
 /* â”€â”€ Sidebar Nav Label â”€â”€ */
@@ -463,6 +464,13 @@
   color: var(--hz-text-subtle);
   font-size: 11px;
   border-top: 1px solid var(--hz-border);
+}
+
+.app-footer-credit {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #cbd5e1;
+  font-weight: 500;
 }
 
 /* =============================================

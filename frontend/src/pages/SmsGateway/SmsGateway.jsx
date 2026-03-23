@@ -12,6 +12,7 @@ import {
   PauseCircleOutlined, PlayCircleOutlined, StopOutlined,
 } from '@ant-design/icons';
 import { smsAPI, filesAPI } from '../../services/api';
+import useUserPersistentState from '../../hooks/useUserPersistentState';
 import './SmsGateway.css';
 
 const { Text, Paragraph } = Typography;
@@ -28,7 +29,7 @@ const TEMPLATE_VARIABLES = [
 
 // ─── Helpers ────────────────────────────────────────────
 const TAG_COLOR = { sent: 'success', failed: 'error', pending: 'processing' };
-const TAG_LABEL = { sent: 'Đã gửi', failed: 'Thất bại', pending: 'Đang gửi' };
+const TAG_LABEL = { sent: 'Đã gửi thành công', failed: 'Không gửi được', pending: 'Đang gửi tin nhắn' };
 
 function StatusBadge({ status }) {
   if (status === 'ok') return <Badge status="success" text="Đã kết nối" />;
@@ -260,18 +261,18 @@ function ConfigTab() {
 }
 
 // ─── Tab 2: Gửi SMS Hàng loạt ─────────────────────────────────────
-function SendTab() {
-  const [customers, setCustomers] = useState([]);
-  const [messageTemplate, setMessageTemplate] = useState('');
-  const [manualPhoneInput, setManualPhoneInput] = useState('');
-  const [manualPhones, setManualPhones] = useState([]);
+function SendTab({ userStorageKey }) {
+  const [customers, setCustomers] = useUserPersistentState(userStorageKey, 'sms.send.customers', []);
+  const [messageTemplate, setMessageTemplate] = useUserPersistentState(userStorageKey, 'sms.send.messageTemplate', '');
+  const [manualPhoneInput, setManualPhoneInput] = useUserPersistentState(userStorageKey, 'sms.send.manualPhoneInput', '');
+  const [manualPhones, setManualPhones] = useUserPersistentState(userStorageKey, 'sms.send.manualPhones', []);
   const [charCount, setCharCount] = useState(0);
   const [sendingState, setSendingState] = useState({ isSending: false, total: 0, current: 0 });
   const [isPaused, setIsPaused] = useState(false);
 
   // Cấu hình nâng cao
-  const [delayConfig, setDelayConfig] = useState({ min: 1000, max: 3000 });
-  const [addRandomChar, setAddRandomChar] = useState(false);
+  const [delayConfig, setDelayConfig] = useUserPersistentState(userStorageKey, 'sms.send.delayConfig', { min: 1000, max: 3000 });
+  const [addRandomChar, setAddRandomChar] = useUserPersistentState(userStorageKey, 'sms.send.addRandomChar', false);
 
   // Refs để điều khiển vòng lặp async
   const messageInputRef = useRef(null);
@@ -281,11 +282,31 @@ function SendTab() {
   // Sync state -> ref
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
+  const updateCustomerSendStatusByPhone = useCallback((phone, code) => {
+    const normalizedPhone = String(phone || '').trim();
+    if (!normalizedPhone) return;
+
+    setCustomers(prev => prev.map(customer => (
+      String(customer.phone || '').trim() === normalizedPhone
+        ? {
+          ...customer,
+          smsStatus: { code },
+          smsError: code === 'failed' ? (customer.smsError || 'Không gửi được') : null,
+        }
+        : customer
+    )));
+  }, [setCustomers]);
+
   const handleUpload = async (info) => {
     const file = info.file;
     try {
       const { data } = await filesAPI.parseExcel(file);
-      const rows = (data.data || []).map((row, i) => ({ ...row, _key: i }));
+      const rows = (data.data || []).map((row, i) => ({
+        ...row,
+        _key: i,
+        smsStatus: null,
+        smsError: null,
+      }));
       setCustomers(rows);
       const valid = rows.filter(r => String(r.phone || '').trim());
       message.success(`Đã tải ${data.row_count} dữ liệu. Có ${valid.length} SĐT hợp lệ.`);
@@ -349,6 +370,14 @@ function SendTab() {
     setIsPaused(false);
     isSendingRef.current = true;
     isPausedRef.current = false;
+
+    // Reset trạng thái của danh sách file trước khi chạy đợt gửi mới.
+    setCustomers(prev => prev.map(customer => ({
+      ...customer,
+      smsStatus: null,
+      smsError: null,
+    })));
+
     let successCount = 0;
 
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -394,6 +423,11 @@ function SendTab() {
       const recipient = recipients[i];
       const phone = recipient.type === 'file' ? recipient.customer.phone : recipient.phone;
       setSendingState(prev => ({ ...prev, current: i + 1 }));
+
+      if (recipient.type === 'file') {
+        updateCustomerSendStatusByPhone(phone, 'pending');
+      }
+
       const text = buildMessageByRecipient(recipient);
 
       try {
@@ -403,6 +437,10 @@ function SendTab() {
         });
         successCount++;
 
+        if (recipient.type === 'file') {
+          updateCustomerSendStatusByPhone(phone, 'sent');
+        }
+
         // Nghỉ ngơi giữa 2 lần gửi
         if (i < recipients.length - 1 && isSendingRef.current) {
           const delayTimeout = Math.floor(Math.random() * (delayConfig.max - delayConfig.min + 1)) + delayConfig.min;
@@ -410,6 +448,17 @@ function SendTab() {
         }
       } catch (err) {
         console.error("Gửi SMS lỗi cho SĐT", phone, err);
+        if (recipient.type === 'file') {
+          setCustomers(prev => prev.map(customer => (
+            String(customer.phone || '').trim() === String(phone || '').trim()
+              ? {
+                ...customer,
+                smsStatus: { code: 'failed' },
+                smsError: err.response?.data?.detail || err.message || 'Không gửi được',
+              }
+              : customer
+          )));
+        }
       }
     }
 
@@ -453,6 +502,22 @@ function SendTab() {
     { title: 'Số điện thoại', dataIndex: 'phone', key: 'phone', width: 140 },
     { title: 'Tên', dataIndex: 'name', key: 'name' },
     { title: 'Mã HĐ', dataIndex: 'contract_id', key: 'contract_id' },
+    {
+      title: 'Trạng thái gửi',
+      key: 'smsStatus',
+      width: 180,
+      render: (_, record) => {
+        const code = record?.smsStatus?.code;
+        if (!code) {
+          return <span style={{ color: '#64748b', fontSize: 12 }}>Chưa gửi</span>;
+        }
+        return (
+          <Tag color={TAG_COLOR[code] || 'default'}>
+            {TAG_LABEL[code] || code}
+          </Tag>
+        );
+      },
+    },
     {
       title: '',
       key: 'action',
@@ -814,7 +879,9 @@ function HistoryTab() {
 }
 
 // ─── Main Component ──────────────────────────────────────
-export default function SmsGateway() {
+export default function SmsGateway({ userStorageKey }) {
+  const [activeTab, setActiveTab] = useUserPersistentState(userStorageKey, 'sms.activeTab', 'config');
+
   const tabItems = [
     {
       key: 'config',
@@ -832,7 +899,7 @@ export default function SmsGateway() {
           <SendOutlined /> Gửi SMS
         </span>
       ),
-      children: <SendTab />,
+      children: <SendTab userStorageKey={userStorageKey} />,
     },
     {
       key: 'history',
@@ -860,7 +927,8 @@ export default function SmsGateway() {
       </div>
 
       <Tabs
-        defaultActiveKey="config"
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={tabItems}
         className="sms-gateway-tabs"
         type="card"

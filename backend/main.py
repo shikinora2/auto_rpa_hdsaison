@@ -22,9 +22,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import (
-    CORS_ORIGINS, 
-    APP_DATA_DIR, 
-    DOWNLOADS_DIR,
+    CORS_ORIGINS,
+    APP_DATA_DIR,
     API_HOST,
     API_PORT,
     DEBUG,
@@ -99,9 +98,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files cho downloads
-app.mount("/downloads", StaticFiles(directory=str(DOWNLOADS_DIR)), name="downloads")
-
 # Include API routers
 app.include_router(config.router, prefix="/api/config", tags=["Config"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
@@ -131,8 +127,7 @@ async def health_check():
     return {
         "status": "healthy",
         "websocket_connections": manager.connection_count,
-        "app_data_dir": str(APP_DATA_DIR),
-        "downloads_dir": str(DOWNLOADS_DIR)
+        "version": "1.0.0"
     }
 
 

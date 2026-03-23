@@ -11,7 +11,9 @@ import io
 import aiofiles
 import re
 import unicodedata
+from pathlib import Path
 from datetime import datetime
+from uuid import uuid4
 
 from config.settings import DOWNLOADS_DIR, APP_DATA_DIR, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE
 from api.deps.auth import require_roles
@@ -23,6 +25,24 @@ UPLOAD_DIR = APP_DATA_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+def _sanitize_filename(filename: str) -> str:
+    name = Path(str(filename or "")).name
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    name = re.sub(r"_+", "_", name).strip("._")
+    if not name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return name
+
+
+def _resolve_target_file(target_dir: Path, filename: str) -> tuple[Path, str]:
+    safe_name = _sanitize_filename(filename)
+    base = target_dir.resolve()
+    candidate = (base / safe_name).resolve()
+    if candidate.parent != base:
+        raise HTTPException(status_code=400, detail="Invalid filename path")
+    return candidate, safe_name
+
+
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """
@@ -30,7 +50,8 @@ async def upload_file(file: UploadFile = File(...)):
     Trả về đường dẫn file và dữ liệu nếu là Excel
     """
     # Kiểm tra extension
-    ext = os.path.splitext(file.filename)[1].lower()
+    safe_original_name = _sanitize_filename(file.filename)
+    ext = os.path.splitext(safe_original_name)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400, 
@@ -47,15 +68,15 @@ async def upload_file(file: UploadFile = File(...)):
     
     # Lưu file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{file.filename}"
-    filepath = UPLOAD_DIR / filename
+    filename = f"{timestamp}_{safe_original_name}"
+    filepath, safe_saved_name = _resolve_target_file(UPLOAD_DIR, filename)
     
     async with aiofiles.open(filepath, 'wb') as f:
         await f.write(contents)
     
     result = {
         "status": "success",
-        "filename": filename,
+        "filename": safe_saved_name,
         "original_name": file.filename,
         "filepath": str(filepath),
         "size": len(contents)
@@ -210,14 +231,14 @@ async def download_file(filename: str, directory: str = "downloads"):
     else:
         raise HTTPException(status_code=400, detail="Invalid directory")
     
-    filepath = target_dir / filename
+    filepath, safe_name = _resolve_target_file(target_dir, filename)
     
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
     return FileResponse(
         path=str(filepath),
-        filename=filename,
+        filename=safe_name,
         media_type="application/octet-stream"
     )
 
@@ -232,14 +253,14 @@ async def delete_file(filename: str, directory: str = "uploads"):
     else:
         raise HTTPException(status_code=400, detail="Invalid directory")
     
-    filepath = target_dir / filename
+    filepath, safe_name = _resolve_target_file(target_dir, filename)
     
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
     try:
-        os.remove(filepath)
-        return {"status": "success", "message": f"Deleted {filename}"}
+        os.remove(str(filepath))
+        return {"status": "success", "message": f"Deleted {safe_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -250,7 +271,8 @@ async def parse_excel_endpoint(file: UploadFile = File(...)):
     Parse file Excel thành JSON (không lưu file)
     Dùng cho việc preview data trước khi gửi
     """
-    ext = os.path.splitext(file.filename)[1].lower()
+    safe_original_name = _sanitize_filename(file.filename)
+    ext = os.path.splitext(safe_original_name)[1].lower()
     if ext not in [".xlsx", ".xls"]:
         raise HTTPException(status_code=400, detail="Only Excel files are allowed")
     
@@ -259,7 +281,7 @@ async def parse_excel_endpoint(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File too large")
     
     # Lưu tạm để parse
-    temp_path = UPLOAD_DIR / f"temp_{file.filename}"
+    temp_path = UPLOAD_DIR / f"temp_{uuid4().hex}{ext}"
     async with aiofiles.open(temp_path, 'wb') as f:
         await f.write(contents)
     

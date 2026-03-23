@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Card,
     Button,
@@ -20,6 +20,7 @@ import {
     FileExcelOutlined,
 } from '@ant-design/icons';
 import { zaloAPI, filesAPI } from '../../services/api';
+import useUserPersistentState from '../../hooks/useUserPersistentState';
 import './Zalo.css';
 
 const { TextArea } = Input;
@@ -37,7 +38,7 @@ const TEMPLATE_VARIABLES = [
 
 const STATUS_META = {
     pending: { label: 'Đang chờ xử lý', color: 'processing' },
-    success: { label: 'Thành công', color: 'success' },
+    success: { label: 'Đã gửi lời mời kết bạn', color: 'success' },
     success_friend: { label: 'Đã gửi (Bạn bè)', color: 'success' },
     success_stranger: { label: 'Đã gửi (Người lạ)', color: 'success' },
     success_unknown: { label: 'Đã gửi', color: 'success' },
@@ -50,10 +51,10 @@ const STATUS_META = {
     no_phone: { label: 'Thiếu số điện thoại', color: 'default' },
 };
 
-function Zalo({ taskStatus }) {
+function Zalo({ taskStatus, logs, progress, userStorageKey }) {
     const [session, setSession] = useState({ is_active: false });
-    const [customers, setCustomers] = useState([]);
-    const [messageTemplate, setMessageTemplate] = useState('');
+    const [customers, setCustomers] = useUserPersistentState(userStorageKey, 'zalo.customers', []);
+    const [messageTemplate, setMessageTemplate] = useUserPersistentState(userStorageKey, 'zalo.messageTemplate', '');
     const [loading, setLoading] = useState({
         login: false,
         sendMessages: false,
@@ -61,7 +62,28 @@ function Zalo({ taskStatus }) {
     });
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
+    const lastRealtimeLogRef = useRef('');
+    const lastRealtimeProgressRef = useRef('');
     const isLocked = !session.is_active;
+
+    const updateCustomerStatusByPhone = useCallback((phone, status) => {
+        const normalizedPhone = String(phone || '').trim();
+        if (!normalizedPhone) return;
+
+        setCustomers(prev => prev.map(customer => (
+            String(customer.phone || '').trim() === normalizedPhone
+                ? { ...customer, taskStatus: status }
+                : customer
+        )));
+    }, [setCustomers]);
+
+    const getRunningTaskType = useCallback(() => {
+        const task = taskStatus?.data?.task;
+        const st = taskStatus?.status;
+        if (!task || (st !== 'running' && st !== 'active' && st !== 'paused')) return null;
+        if (task === 'add_friends' || task === 'send_messages') return task;
+        return null;
+    }, [taskStatus]);
 
     const markPendingStatus = (taskType) => {
         const pendingText = taskType === 'add_friends' ? 'Đang kết bạn...' : 'Đang nhắn tin...';
@@ -72,7 +94,7 @@ function Zalo({ taskStatus }) {
         )));
     };
 
-    const applyTaskResultToCustomers = (taskType, resultData) => {
+    const applyTaskResultToCustomers = useCallback((taskType, resultData) => {
         let details = [];
 
         if (taskType === 'send_messages') {
@@ -135,12 +157,12 @@ function Zalo({ taskStatus }) {
                         : item.status === 'already_sent'
                             ? 'Đã gửi lời mời trước đó'
                             : item.status === 'success'
-                                ? 'Kết bạn thành công'
+                                ? 'Đã gửi lời mời kết bạn'
                                 : 'Kết bạn thất bại'
                 }
             };
         }));
-    };
+    }, [setCustomers]);
 
     const stopSessionPolling = () => {
         if (pollRef.current) {
@@ -197,7 +219,78 @@ function Zalo({ taskStatus }) {
         if (task === 'zalo_login' && (st === 'completed' || st === 'error')) {
             loadSession();
         }
-    }, [taskStatus]);
+    }, [taskStatus, applyTaskResultToCustomers, setCustomers]);
+
+    useEffect(() => {
+        const runningTask = getRunningTaskType();
+        if (!runningTask || !progress?.message) return;
+
+        const marker = `${progress.timestamp || ''}|${progress.current || ''}|${progress.total || ''}|${progress.message || ''}`;
+        if (lastRealtimeProgressRef.current === marker) return;
+        lastRealtimeProgressRef.current = marker;
+
+        const phoneMatch = String(progress.message).match(/Đang xử lý:\s*([0-9]{8,15})/i);
+        if (!phoneMatch) return;
+
+        const phone = phoneMatch[1];
+        updateCustomerStatusByPhone(phone, {
+            code: 'pending',
+            text: runningTask === 'add_friends' ? 'Đang kết bạn...' : 'Đang gửi tin nhắn...',
+        });
+    }, [progress, getRunningTaskType, updateCustomerStatusByPhone]);
+
+    useEffect(() => {
+        if (!Array.isArray(logs) || logs.length === 0) return;
+        const runningTask = getRunningTaskType();
+        if (!runningTask) return;
+
+        const latest = logs[logs.length - 1];
+        const text = String(latest?.message || '');
+        const marker = `${latest?.timestamp || ''}|${latest?.level || ''}|${text}`;
+        if (!text || lastRealtimeLogRef.current === marker) return;
+        lastRealtimeLogRef.current = marker;
+
+        const phoneMatch = text.match(/([0-9]{8,15})/);
+        if (!phoneMatch) return;
+        const phone = phoneMatch[1];
+
+        if (runningTask === 'add_friends') {
+            if (text.includes('Kết bạn thành công')) {
+                updateCustomerStatusByPhone(phone, { code: 'success', text: 'Đã gửi lời mời kết bạn' });
+                return;
+            }
+            if (text.includes('Đã là bạn bè')) {
+                updateCustomerStatusByPhone(phone, { code: 'already_friend', text: 'Đã là bạn bè' });
+                return;
+            }
+            if (text.includes('Đã gửi lời mời')) {
+                updateCustomerStatusByPhone(phone, { code: 'already_sent', text: 'Đã gửi lời mời trước đó' });
+                return;
+            }
+            if (text.includes('Thất bại') || text.includes('Lỗi')) {
+                updateCustomerStatusByPhone(phone, { code: 'failed', text: 'Kết bạn thất bại' });
+            }
+            return;
+        }
+
+        if (runningTask === 'send_messages') {
+            if (text.includes('thành công')) {
+                updateCustomerStatusByPhone(phone, { code: 'success_unknown', text: 'Gửi tin thành công' });
+                return;
+            }
+            if (text.includes('chưa đăng ký')) {
+                updateCustomerStatusByPhone(phone, { code: 'not_registered', text: 'SĐT chưa đăng ký hoặc không cho phép tìm' });
+                return;
+            }
+            if (text.includes('Không tìm thấy') || text.includes('không tìm thấy')) {
+                updateCustomerStatusByPhone(phone, { code: 'not_found', text: 'Không tìm thấy tài khoản' });
+                return;
+            }
+            if (text.includes('Thất bại') || text.includes('Lỗi')) {
+                updateCustomerStatusByPhone(phone, { code: 'failed', text: 'Gửi tin nhắn thất bại' });
+            }
+        }
+    }, [logs, getRunningTaskType, updateCustomerStatusByPhone]);
 
     const loadSession = async () => {
         try {
