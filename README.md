@@ -54,8 +54,9 @@ Fail-fast: bước nào lỗi sẽ dừng ngay với exit code != 0.
 
 ```bash
 cp backend/.env.example backend/.env
-docker-compose build
-docker-compose up -d
+mkdir -p app_data downloads_contracts
+docker compose build
+docker compose up -d
 ```
 
 API endpoint: `http://<VPS_IP>:8000`

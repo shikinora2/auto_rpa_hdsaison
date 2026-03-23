@@ -30,9 +30,10 @@ from config.settings import (
     CLEAR_SESSION_ON_STARTUP
 )
 from api.websocket.connection_manager import manager
-from api.routes import auth, config, rpa, zalo, files, sms
+from api.routes import auth, config, rpa, zalo, files, sms, admin_cleanup
 from db.database import SessionLocal
 from db.init_db import init_db_schema, seed_default_roles, seed_default_admin
+from services.cleanup_service import get_cleanup_service
 
 
 @asynccontextmanager
@@ -66,18 +67,23 @@ async def lifespan(app: FastAPI):
         try:
             if APP_DATA_DIR.exists():
                 for item in APP_DATA_DIR.iterdir():
-                    if item.is_dir() and (item.name == "rpa_session" or item.name.startswith("zalo_session")):
+                    if item.is_dir() and (item.name == "rpa_sessions" or item.name.startswith("zalo_session")):
                         shutil.rmtree(item, ignore_errors=True)
                         print(f"  - Đã xóa session cũ: {item.name}")
         except Exception as e:
             print(f"Lỗi khi dọn dẹp session: {e}")
     else:
         print("Giữ session đăng nhập hiện có (cache TTL điều khiển tại runtime).")
+
+    cleanup_service = get_cleanup_service()
+    await cleanup_service.start()
+    print("Cleanup service started.")
     print("=" * 60)
     
     yield
     
     # Shutdown
+    await cleanup_service.stop()
     print("Shutting down server...")
 
 
@@ -105,6 +111,7 @@ app.include_router(rpa.router, prefix="/api/rpa", tags=["RPA"])
 app.include_router(zalo.router, prefix="/api/zalo", tags=["Zalo"])
 app.include_router(files.router, prefix="/api/files", tags=["Files"])
 app.include_router(sms.router, prefix="/api/sms", tags=["SMS Gateway"])
+app.include_router(admin_cleanup.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.get("/")

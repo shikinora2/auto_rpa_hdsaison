@@ -57,6 +57,23 @@ def _clear_qr_cache(user_id: int | None = None):
         return
     _qr_cache_by_user.pop(user_id, None)
 
+
+def cleanup_expired_qr_cache() -> int:
+    """Xóa các QR cache đã quá TTL; trả về số entry đã xóa."""
+    state = _snapshot_zalo_state()
+    if state.get("is_running") and _is_zalo_login_task(state.get("current_task")):
+        return 0
+
+    now_ts = time.time()
+    stale_user_ids = [
+        user_id
+        for user_id, entry in _qr_cache_by_user.items()
+        if now_ts - float(entry.get("ts") or 0) >= _QR_TTL
+    ]
+    for user_id in stale_user_ids:
+        _qr_cache_by_user.pop(user_id, None)
+    return len(stale_user_ids)
+
 # Global state cho Zalo — KHÔNG lưu playwright/context/page ở đây.
 # Mỗi task (login, send_messages, add_friends) tự mở/đóng browser riêng.
 # Session được lưu trên disk (persistent context), không cần giữ browser sống mãi.

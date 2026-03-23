@@ -26,6 +26,11 @@ cd auto_rpa_hdsaison
 cp backend/.env.example backend/.env
 ```
 
+Tạo thư mục dữ liệu (chỉ cần 1 lần):
+```bash
+mkdir -p app_data downloads_contracts
+```
+
 Chỉnh `backend/.env` tối thiểu:
 - `ALLOWED_ORIGINS=http://<VPS_IP>:8000,https://<domain-cua-ban>`
 - `ENCRYPTION_KEY=<fernet-key>`
@@ -40,13 +45,19 @@ PY
 
 ## 3) Build & chạy container
 ```bash
-docker-compose build --no-cache
-docker-compose up -d
+docker compose pull
+docker compose build --no-cache
+docker compose up -d
 ```
 
 Xem log:
 ```bash
-docker-compose logs -f app
+docker compose logs -f app
+```
+
+Kiểm tra cấu hình compose trước khi chạy:
+```bash
+docker compose config
 ```
 
 ## 4) Kiểm tra health
@@ -54,11 +65,23 @@ docker-compose logs -f app
 curl http://127.0.0.1:8000/api/health
 ```
 
+Kiểm tra trạng thái container:
+```bash
+docker compose ps
+```
+
 ## 5) Cập nhật phiên bản mới
 ```bash
 git pull
-docker-compose build
-docker-compose up -d
+docker compose build
+docker compose up -d
+```
+
+Rollback nhanh về image trước (nếu cần):
+```bash
+docker compose down
+docker image ls | head
+# chọn lại tag cũ nếu bạn có dùng image tag riêng
 ```
 
 ## 6) Sao lưu dữ liệu quan trọng
@@ -67,3 +90,25 @@ Dữ liệu được mount ra host:
 - `./downloads_contracts`
 
 Chỉ cần backup 2 thư mục này.
+
+## 7) Mở firewall (nếu đang bật UFW)
+```bash
+sudo ufw allow 8000/tcp
+sudo ufw status
+```
+
+## 8) Lệnh vận hành nhanh
+```bash
+# stop
+docker compose stop
+
+# start lại
+docker compose start
+
+# restart service app
+docker compose restart app
+
+# xem health + trạng thái
+docker compose ps
+docker inspect --format='{{json .State.Health}}' hdsaison-rpa | jq
+```

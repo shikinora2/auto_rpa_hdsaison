@@ -35,6 +35,16 @@ SMS_HISTORY_FILE = APP_DATA_DIR / "sms_history.json"
 SESSION_CACHE_TTL_HOURS = int(os.getenv("SESSION_CACHE_TTL_HOURS", "24"))
 SESSION_CACHE_TTL_SECONDS = SESSION_CACHE_TTL_HOURS * 3600
 
+# Cleanup service
+CLEANUP_ENABLED = os.getenv("CLEANUP_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "1800"))
+CLEANUP_UPLOAD_RETENTION_HOURS = int(os.getenv("CLEANUP_UPLOAD_RETENTION_HOURS", "72"))
+CLEANUP_DOWNLOAD_RETENTION_HOURS = int(os.getenv("CLEANUP_DOWNLOAD_RETENTION_HOURS", "336"))
+CLEANUP_SESSION_RETENTION_HOURS = int(
+    os.getenv("CLEANUP_SESSION_RETENTION_HOURS", str(max(SESSION_CACHE_TTL_HOURS + 12, 36)))
+)
+CLEANUP_AUTH_TOKEN_RETENTION_DAYS = int(os.getenv("CLEANUP_AUTH_TOKEN_RETENTION_DAYS", "7"))
+
 # Database (mặc định SQLite local, có thể override bằng PostgreSQL/MySQL URL)
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(APP_DATA_DIR / 'app.db').as_posix()}")
 

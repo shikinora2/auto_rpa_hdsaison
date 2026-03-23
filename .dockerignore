@@ -13,7 +13,9 @@ frontend/node_modules
 frontend/dist
 
 app_data/zalo_session
-app_data/rpa_session
+app_data/zalo_session_*
+app_data/rpa_sessions
+backend/.env
 
 downloads_contracts/*
 !downloads_contracts/.gitkeep

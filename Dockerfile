@@ -7,7 +7,7 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /build/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci --no-audit --no-fund
 
 COPY frontend/ ./
 RUN npm run build
@@ -19,7 +19,8 @@ RUN npm run build
 FROM mcr.microsoft.com/playwright/python:v1.41.0-jammy
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
@@ -39,4 +40,4 @@ RUN mkdir -p /app/app_data /app/downloads_contracts
 EXPOSE 8000
 
 WORKDIR /app/backend
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers"]
