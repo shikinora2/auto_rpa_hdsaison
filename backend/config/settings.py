@@ -88,7 +88,7 @@ CORS_ORIGINS = [
 
 # Upload settings
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".pdf", ".json"}
+ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".pdf", ".json", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 # Default config template
 DEFAULT_CONFIG = {

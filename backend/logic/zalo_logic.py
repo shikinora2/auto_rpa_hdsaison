@@ -219,7 +219,7 @@ class ZaloLogin:
             logger.error(f"❌ Lỗi trong quá trình đăng nhập: {str(e)}")
             return False
     
-    def check_logged_in(self):
+    def check_logged_in(self, timeout: int = 12000):
         """
         Kiểm tra đã đăng nhập chưa (dùng khi kiểm tra session cũ)
         Xác định: URL là chat.zalo.me VÀ avatar user hoặc icon chat hiển thị
@@ -227,12 +227,34 @@ class ZaloLogin:
         try:
             if "chat.zalo.me" not in self.page.url:
                 return False
-            
-            return bool(
-                self.page.query_selector("div.zavatar img") or
-                self.page.query_selector("i.fa.fa-Message_28_Filled") or
-                self.page.query_selector("div.mmi-icon-wr")
-            )
+
+            # Chờ shell UI của chat tải xong để tránh false-negative trên mạng chậm
+            reliable_selectors = [
+                "div.zavatar img",
+                "i.fa.fa-Message_28_Filled",
+                "div.mmi-icon-wr",
+                "input#contact-search-input",
+                "div.chat-input-container__left-layout",
+                "div#richInput.rich-input[contenteditable='true']",
+            ]
+
+            for selector in reliable_selectors:
+                try:
+                    el = self.page.wait_for_selector(selector, timeout=timeout, state="attached")
+                    if el:
+                        return True
+                except PlaywrightTimeoutError:
+                    continue
+
+            # Fallback cuối: title bắt đầu bằng "Zalo -" cũng có thể coi là đã vào chat
+            try:
+                title = (self.page.title() or "").strip()
+                if title.startswith("Zalo -"):
+                    return True
+            except Exception:
+                pass
+
+            return False
         except Exception as e:
             logger.error(f"Lỗi khi kiểm tra trạng thái đăng nhập: {str(e)}")
             return False
@@ -490,7 +512,7 @@ class ZaloSessionManager:
             time.sleep(random.uniform(2.0, 3.0))
 
             zalo = ZaloLogin(page=page, context=context)
-            if zalo.check_logged_in():
+            if zalo.check_logged_in(timeout=15000):
                 logger.info("✅ [headless] Session còn hợp lệ, đã kết nối headless")
                 return True, p, context, page
 
@@ -532,7 +554,7 @@ class ZaloSessionManager:
             time.sleep(random.uniform(2.0, 3.0))
 
             zalo = ZaloLogin(page=page, context=context)
-            if zalo.check_logged_in():
+            if zalo.check_logged_in(timeout=15000):
                 mode = "headless" if headless else "headful"
                 logger.info(f"✅ [{mode}] Session còn hợp lệ, đã kết nối Zalo")
                 return True, p, context, page

@@ -78,21 +78,48 @@ class RPASessionManager:
             return False
         return time.time() < expires_at_ts
 
-    def _set_cache_active(self):
+    @staticmethod
+    def _normalize_hpo_username(username: str | None) -> str:
+        return str(username or "").strip().lower()
+
+    def _get_cached_hpo_username(self) -> str:
+        session_info = self._read_session_info()
+        return self._normalize_hpo_username(session_info.get("hpo_username"))
+
+    def _set_cache_active(self, hpo_username: str | None = None):
         now_ts = time.time()
-        self._write_session_info({
+        current_info = self._read_session_info()
+        to_save = {
             "status": "active",
             "last_login_ts": now_ts,
             "expires_at_ts": now_ts + SESSION_CACHE_TTL_SECONDS,
             "ttl_seconds": SESSION_CACHE_TTL_SECONDS,
-        })
+        }
 
-    def _set_cache_inactive(self, reason: str = "inactive"):
-        self._write_session_info({
+        # Giữ hpo_username hiện có nếu không truyền vào (hữu ích cho đường check session)
+        normalized_username = self._normalize_hpo_username(hpo_username)
+        if normalized_username:
+            to_save["hpo_username"] = normalized_username
+        elif self._normalize_hpo_username(current_info.get("hpo_username")):
+            to_save["hpo_username"] = self._normalize_hpo_username(current_info.get("hpo_username"))
+
+        self._write_session_info(to_save)
+
+    def _set_cache_inactive(self, reason: str = "inactive", hpo_username: str | None = None):
+        current_info = self._read_session_info()
+        to_save = {
             "status": reason,
             "expires_at_ts": 0,
             "ttl_seconds": SESSION_CACHE_TTL_SECONDS,
-        })
+        }
+
+        normalized_username = self._normalize_hpo_username(hpo_username)
+        if normalized_username:
+            to_save["hpo_username"] = normalized_username
+        elif self._normalize_hpo_username(current_info.get("hpo_username")):
+            to_save["hpo_username"] = self._normalize_hpo_username(current_info.get("hpo_username"))
+
+        self._write_session_info(to_save)
 
     def _load_cached_login_state(self):
         try:
@@ -186,6 +213,7 @@ class RPASessionManager:
         context = None
         try:
             session_dir = self._ensure_session_dir()
+            normalized_input_username = self._normalize_hpo_username(username)
             self._log_from_thread(loop, status_callback, "Đang mở trình duyệt...")
 
             with sync_playwright() as playwright:
@@ -199,13 +227,42 @@ class RPASessionManager:
 
                 # Kiểm tra session cũ còn hợp lệ không
                 self._log_from_thread(loop, status_callback, "Đang kiểm tra session cũ...")
+
+                cached_username = self._get_cached_hpo_username()
+                if cached_username and cached_username != normalized_input_username:
+                    self._log_from_thread(
+                        loop,
+                        status_callback,
+                        f"⚠ Phát hiện đổi tài khoản HPO ({cached_username} -> {normalized_input_username}), xóa session cũ để đăng nhập lại..."
+                    )
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
+                    self._clear_stale_session()
+
+                    # Re-open context sau khi xóa session để login tài khoản mới
+                    context = playwright.chromium.launch_persistent_context(
+                        user_data_dir=session_dir,
+                        headless=headless,
+                        slow_mo=0 if headless else 250,
+                        args=['--disable-blink-features=AutomationControlled']
+                    )
+                    page = context.pages[0] if context.pages else context.new_page()
+
                 try:
                     page.goto(DASHBOARD_URL, timeout=15000)
                     page.wait_for_load_state('networkidle', timeout=10000)
                     current_url = page.url
-                    if DASHBOARD_URL in current_url or 'dashboard' in current_url.lower():
+                    can_reuse_existing_session = (
+                        (DASHBOARD_URL in current_url or 'dashboard' in current_url.lower())
+                        and cached_username
+                        and cached_username == normalized_input_username
+                    )
+
+                    if can_reuse_existing_session:
                         self._log_from_thread(loop, status_callback, "✅ Đã có session hợp lệ! Không cần đăng nhập lại.")
-                        self._set_cache_active()
+                        self._set_cache_active(hpo_username=username)
                         context.close()
                         return True
                 except Exception as e:
@@ -227,7 +284,7 @@ class RPASessionManager:
                 page.wait_for_url("**/dashboard**", timeout=30000)
 
                 self._log_from_thread(loop, status_callback, "✅ Đăng nhập thành công! Session đã được lưu.")
-                self._set_cache_active()
+                self._set_cache_active(hpo_username=username)
                 context.close()
                 return True
 

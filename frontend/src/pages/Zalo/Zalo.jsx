@@ -10,6 +10,7 @@ import {
     Row,
     Col,
     Alert,
+    Tabs,
 } from 'antd';
 import {
     SendOutlined,
@@ -36,32 +37,159 @@ const TEMPLATE_VARIABLES = [
     { label: 'Ngày sinh', value: '{dob}' },
 ];
 
-const STATUS_META = {
-    pending: { label: 'Đang chờ xử lý', color: 'processing' },
-    success: { label: 'Đã gửi lời mời kết bạn', color: 'success' },
-    success_friend: { label: 'Đã gửi (Bạn bè)', color: 'success' },
-    success_stranger: { label: 'Đã gửi (Người lạ)', color: 'success' },
-    success_unknown: { label: 'Đã gửi', color: 'success' },
+const FRIEND_STATUS_META = {
+    pending: { label: 'Đang xử lý', color: 'processing' },
+    success: { label: 'Kết bạn thành công', color: 'success' },
     already_friend: { label: 'Đã là bạn bè', color: 'blue' },
     already_sent: { label: 'Đã gửi lời mời trước', color: 'gold' },
-    not_registered: { label: 'SĐT chưa đăng ký/không cho phép tìm', color: 'orange' },
-    not_found: { label: 'Không tìm thấy', color: 'orange' },
-    failed: { label: 'Thất bại', color: 'error' },
-    error: { label: 'Lỗi', color: 'error' },
-    no_phone: { label: 'Thiếu số điện thoại', color: 'default' },
+    failed: { label: 'Kết bạn thất bại', color: 'error' },
+    rate_limited: { label: 'Bị giới hạn (chống spam)', color: 'volcano' },
+    skipped: { label: 'Không thực hiện', color: 'default' },
+    idle: { label: 'Chưa thao tác', color: 'default' },
 };
+
+const SEND_STATUS_META = {
+    pending: { label: 'Đang xử lý', color: 'processing' },
+    success: { label: 'Gửi tin thành công', color: 'success' },
+    failed: { label: 'Gửi tin thất bại', color: 'error' },
+    blocked: { label: 'Không gửi do bị giới hạn', color: 'volcano' },
+    skipped: { label: 'Không thực hiện', color: 'default' },
+    idle: { label: 'Chưa thao tác', color: 'default' },
+};
+
+function splitTaskStatus(taskStatusValue) {
+    const code = taskStatusValue?.code;
+    const text = String(taskStatusValue?.text || '').toLowerCase();
+
+    if (!code) {
+        return {
+            friend: { code: 'idle', text: FRIEND_STATUS_META.idle.label },
+            send: { code: 'idle', text: SEND_STATUS_META.idle.label },
+        };
+    }
+
+    // Pending realtime
+    if (code === 'pending') {
+        if (text.includes('kết bạn + gửi')) {
+            return {
+                friend: { code: 'pending', text: 'Đang kết bạn...' },
+                send: { code: 'pending', text: 'Đang chờ gửi tin...' },
+            };
+        }
+        if (text.includes('kết bạn')) {
+            return {
+                friend: { code: 'pending', text: 'Đang kết bạn...' },
+                send: { code: 'idle', text: SEND_STATUS_META.idle.label },
+            };
+        }
+        return {
+            friend: { code: 'idle', text: FRIEND_STATUS_META.idle.label },
+            send: { code: 'pending', text: 'Đang gửi tin...' },
+        };
+    }
+
+    // Combined flow: add friend + send message
+    if (code === 'success_and_sent') {
+        return {
+            friend: { code: 'success', text: 'Kết bạn thành công' },
+            send: { code: 'success', text: 'Gửi tin thành công' },
+        };
+    }
+    if (code === 'already_friend_sent') {
+        return {
+            friend: { code: 'already_friend', text: 'Đã là bạn bè' },
+            send: { code: 'success', text: 'Gửi tin thành công' },
+        };
+    }
+    if (code === 'already_sent_and_sent') {
+        return {
+            friend: { code: 'already_sent', text: 'Đã gửi lời mời trước' },
+            send: { code: 'success', text: 'Gửi tin thành công' },
+        };
+    }
+    if (code === 'success_send_failed') {
+        return {
+            friend: { code: 'success', text: 'Kết bạn thành công' },
+            send: { code: 'failed', text: 'Gửi tin thất bại' },
+        };
+    }
+    if (code === 'already_friend_send_failed') {
+        return {
+            friend: { code: 'already_friend', text: 'Đã là bạn bè' },
+            send: { code: 'failed', text: 'Gửi tin thất bại' },
+        };
+    }
+    if (code === 'already_sent_send_failed') {
+        return {
+            friend: { code: 'already_sent', text: 'Đã gửi lời mời trước' },
+            send: { code: 'failed', text: 'Gửi tin thất bại' },
+        };
+    }
+    if (code === 'send_failed') {
+        return {
+            friend: { code: 'idle', text: FRIEND_STATUS_META.idle.label },
+            send: { code: 'failed', text: 'Gửi tin thất bại' },
+        };
+    }
+
+    if (code === 'rate_limited') {
+        return {
+            friend: { code: 'rate_limited', text: 'Bị giới hạn chống spam' },
+            send: { code: 'blocked', text: 'Không gửi do bị giới hạn' },
+        };
+    }
+
+    // Add-friend only flow
+    if (code === 'success' || code === 'already_friend' || code === 'already_sent') {
+        return {
+            friend: { code, text: taskStatusValue?.text || FRIEND_STATUS_META[code]?.label },
+            send: { code: 'idle', text: SEND_STATUS_META.idle.label },
+        };
+    }
+
+    // Send-message only flow
+    if (['success_friend', 'success_stranger', 'success_unknown'].includes(code)) {
+        return {
+            friend: { code: 'idle', text: FRIEND_STATUS_META.idle.label },
+            send: { code: 'success', text: taskStatusValue?.text || 'Gửi tin thành công' },
+        };
+    }
+
+    if (['not_registered', 'not_found', 'no_phone'].includes(code)) {
+        return {
+            friend: { code: 'idle', text: FRIEND_STATUS_META.idle.label },
+            send: { code: 'failed', text: taskStatusValue?.text || 'Gửi tin thất bại' },
+        };
+    }
+
+    return {
+        friend: { code: 'failed', text: taskStatusValue?.text || 'Kết bạn thất bại' },
+        send: { code: 'failed', text: taskStatusValue?.text || 'Gửi tin thất bại' },
+    };
+}
+
+function renderStatusTag(status, metaMap) {
+    const meta = metaMap[status?.code] || metaMap.idle;
+    return <Tag color={meta.color}>{status?.text || meta.label}</Tag>;
+}
 
 function Zalo({ taskStatus, logs, progress, userStorageKey }) {
     const [session, setSession] = useState({ is_active: false });
     const [customers, setCustomers] = useUserPersistentState(userStorageKey, 'zalo.customers', []);
     const [messageTemplate, setMessageTemplate] = useUserPersistentState(userStorageKey, 'zalo.messageTemplate', '');
+    const [greetingTemplate, setGreetingTemplate] = useUserPersistentState(userStorageKey, 'zalo.greetingTemplate', '');
+    const [attachmentFilename, setAttachmentFilename] = useUserPersistentState(userStorageKey, 'zalo.attachmentFilename', '');
+    const [activeComposeTab, setActiveComposeTab] = useState('message');
+    const [uploadingAttachment, setUploadingAttachment] = useState(false);
     const [loading, setLoading] = useState({
         login: false,
         sendMessages: false,
-        addFriends: false
+        addFriends: false,
+        addFriendsAndSend: false,
     });
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
+    const greetingInputRef = useRef(null);
     const lastRealtimeLogRef = useRef('');
     const lastRealtimeProgressRef = useRef('');
     const isLocked = !session.is_active;
@@ -81,12 +209,16 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         const task = taskStatus?.data?.task;
         const st = taskStatus?.status;
         if (!task || (st !== 'running' && st !== 'active' && st !== 'paused')) return null;
-        if (task === 'add_friends' || task === 'send_messages') return task;
+        if (task === 'add_friends' || task === 'send_messages' || task === 'add_friends_and_send') return task;
         return null;
     }, [taskStatus]);
 
     const markPendingStatus = (taskType) => {
-        const pendingText = taskType === 'add_friends' ? 'Đang kết bạn...' : 'Đang nhắn tin...';
+        const pendingText = taskType === 'add_friends'
+            ? 'Đang kết bạn...'
+            : taskType === 'add_friends_and_send'
+                ? 'Đang kết bạn + gửi tin...'
+                : 'Đang nhắn tin...';
         setCustomers(prev => prev.map(customer => (
             String(customer.phone || '').trim()
                 ? { ...customer, taskStatus: { code: 'pending', text: pendingText } }
@@ -99,7 +231,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
 
         if (taskType === 'send_messages') {
             details = resultData?.results?.details || [];
-        } else if (taskType === 'add_friends') {
+        } else if (taskType === 'add_friends' || taskType === 'add_friends_and_send') {
             details = resultData?.results || [];
         }
 
@@ -152,7 +284,23 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
                 ...customer,
                 taskStatus: {
                     code: item.status || 'failed',
-                    text: item.status === 'already_friend'
+                    text: item.status === 'success_and_sent'
+                        ? 'Kết bạn + gửi tin thành công'
+                        : item.status === 'already_friend_sent'
+                            ? 'Đã là bạn, gửi tin thành công'
+                            : item.status === 'already_sent_and_sent'
+                                ? 'Đã gửi lời mời trước, gửi tin thành công'
+                                : item.status === 'success_send_failed'
+                                    ? 'Kết bạn xong, gửi tin thất bại'
+                                    : item.status === 'already_friend_send_failed'
+                                        ? 'Đã là bạn, gửi tin thất bại'
+                                        : item.status === 'already_sent_send_failed'
+                                            ? 'Đã gửi lời mời trước, gửi tin thất bại'
+                                            : item.status === 'send_failed'
+                                                ? 'Gửi tin thất bại'
+                                                : item.status === 'rate_limited'
+                        ? 'Zalo giới hạn tìm kiếm/kết bạn, tác vụ đã dừng'
+                        : item.status === 'already_friend'
                         ? 'Đã là bạn bè'
                         : item.status === 'already_sent'
                             ? 'Đã gửi lời mời trước đó'
@@ -198,19 +346,33 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         }
 
         if (st === 'completed' || st === 'error' || st === 'stopping') {
-            setLoading({ login: false, sendMessages: false, addFriends: false });
+            setLoading({ login: false, sendMessages: false, addFriends: false, addFriendsAndSend: false });
             stopSessionPolling();
         }
 
-        if (st === 'completed' && (task === 'send_messages' || task === 'add_friends')) {
+        if (st === 'completed' && (task === 'send_messages' || task === 'add_friends' || task === 'add_friends_and_send')) {
             applyTaskResultToCustomers(task, taskStatus.data || {});
         }
 
-        if (st === 'error' && (task === 'send_messages' || task === 'add_friends')) {
-            const taskLabel = task === 'add_friends' ? 'kết bạn' : 'nhắn tin';
+        if (st === 'error' && (task === 'send_messages' || task === 'add_friends' || task === 'add_friends_and_send')) {
+            const taskLabel = task === 'add_friends'
+                ? 'kết bạn'
+                : task === 'add_friends_and_send'
+                    ? 'kết bạn + gửi tin'
+                    : 'nhắn tin';
+            const errorText = String(taskStatus?.data?.error || '');
+            const isRateLimited = /Tìm số điện thoại quá nhiều lần|hoạt động bất thường|Bạn hãy thử lại vào/i.test(errorText);
             setCustomers(prev => prev.map(customer => (
                 customer.taskStatus?.code === 'pending'
-                    ? { ...customer, taskStatus: { code: 'error', text: `Lỗi khi ${taskLabel}` } }
+                    ? {
+                        ...customer,
+                        taskStatus: {
+                            code: isRateLimited ? 'rate_limited' : 'error',
+                            text: isRateLimited
+                                ? 'Zalo giới hạn tìm kiếm/kết bạn, tác vụ đã dừng'
+                                : `Lỗi khi ${taskLabel}`,
+                        }
+                    }
                     : customer
             )));
         }
@@ -235,7 +397,11 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         const phone = phoneMatch[1];
         updateCustomerStatusByPhone(phone, {
             code: 'pending',
-            text: runningTask === 'add_friends' ? 'Đang kết bạn...' : 'Đang gửi tin nhắn...',
+            text: runningTask === 'add_friends'
+                ? 'Đang kết bạn...'
+                : runningTask === 'add_friends_and_send'
+                    ? 'Đang kết bạn + gửi tin...'
+                    : 'Đang gửi tin nhắn...',
         });
     }, [progress, getRunningTaskType, updateCustomerStatusByPhone]);
 
@@ -254,9 +420,14 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         if (!phoneMatch) return;
         const phone = phoneMatch[1];
 
-        if (runningTask === 'add_friends') {
+        if (runningTask === 'add_friends' || runningTask === 'add_friends_and_send') {
             if (text.includes('Kết bạn thành công')) {
-                updateCustomerStatusByPhone(phone, { code: 'success', text: 'Đã gửi lời mời kết bạn' });
+                updateCustomerStatusByPhone(
+                    phone,
+                    runningTask === 'add_friends_and_send'
+                        ? { code: 'success_and_sent', text: 'Kết bạn + gửi tin thành công' }
+                        : { code: 'success', text: 'Đã gửi lời mời kết bạn' }
+                );
                 return;
             }
             if (text.includes('Đã là bạn bè')) {
@@ -338,30 +509,78 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         window.open(filesAPI.templateUrl(), '_blank');
     };
 
+    const handleUploadAttachment = async (info) => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
+
+        const file = info?.file?.originFileObj || info?.file;
+        if (!file) {
+            return;
+        }
+
+        setUploadingAttachment(true);
+        try {
+            const { data } = await filesAPI.upload(file);
+            const uploadedName = String(data?.filename || '').trim();
+            if (!uploadedName) {
+                throw new Error('Không nhận được tên file từ server');
+            }
+            setAttachmentFilename(uploadedName);
+            message.success('Đã tải ảnh đính kèm');
+        } catch (error) {
+            message.error(error?.response?.data?.detail || 'Không thể tải ảnh đính kèm');
+        } finally {
+            setUploadingAttachment(false);
+        }
+    };
+
+    const clearAttachment = () => {
+        if (isLocked) {
+            message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
+            return;
+        }
+        setAttachmentFilename('');
+    };
+
     const insertTemplateVariable = (variable) => {
         if (isLocked) {
             message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
             return;
         }
-        const textarea = messageInputRef.current?.resizableTextArea?.textArea;
+        const isInviteTab = activeComposeTab === 'invite';
+        const textarea = isInviteTab
+            ? greetingInputRef.current?.resizableTextArea?.textArea
+            : messageInputRef.current?.resizableTextArea?.textArea;
+        const value = isInviteTab ? greetingTemplate : messageTemplate;
+        const setValue = isInviteTab ? setGreetingTemplate : setMessageTemplate;
+        const maxLen = isInviteTab ? 150 : null;
 
         if (!textarea) {
-            setMessageTemplate(prev => `${prev}${prev ? ' ' : ''}${variable}`);
+            setValue(prev => {
+                const next = `${prev}${prev ? ' ' : ''}${variable}`;
+                return maxLen ? next.slice(0, maxLen) : next;
+            });
             return;
         }
 
-        const selectionStart = textarea.selectionStart ?? messageTemplate.length;
-        const selectionEnd = textarea.selectionEnd ?? messageTemplate.length;
-        const nextValue =
-            messageTemplate.slice(0, selectionStart) +
+        const selectionStart = textarea.selectionStart ?? value.length;
+        const selectionEnd = textarea.selectionEnd ?? value.length;
+        let nextValue =
+            value.slice(0, selectionStart) +
             variable +
-            messageTemplate.slice(selectionEnd);
+            value.slice(selectionEnd);
 
-        setMessageTemplate(nextValue);
+        if (maxLen && nextValue.length > maxLen) {
+            nextValue = nextValue.slice(0, maxLen);
+        }
+
+        setValue(nextValue);
 
         window.requestAnimationFrame(() => {
             textarea.focus();
-            const cursorPosition = selectionStart + variable.length;
+            const cursorPosition = Math.min(selectionStart + variable.length, nextValue.length);
             textarea.setSelectionRange(cursorPosition, cursorPosition);
         });
     };
@@ -397,7 +616,8 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
             await zaloAPI.sendMessages({
                 customers: payload,
                 message_template: messageTemplate,
-                check_friend_status: true
+                check_friend_status: true,
+                attachment_filename: attachmentFilename || null,
             });
             message.success('Đã bắt đầu gửi tin nhắn');
         } catch (error) {
@@ -432,12 +652,57 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
             });
             await zaloAPI.addFriends({
                 customers: payload,
-                greeting_template: messageTemplate
+                greeting_template: greetingTemplate
             });
             message.success('Đã bắt đầu kết bạn');
         } catch (error) {
             message.error(error.response?.data?.detail || 'Không thể kết bạn');
             setLoading(prev => ({ ...prev, addFriends: false }));
+        }
+    };
+
+    const handleAddFriendsAndSend = async () => {
+        if (!session.is_active) {
+            message.warning('Vui lòng đăng nhập Zalo trước');
+            return;
+        }
+        if (customers.length === 0) {
+            message.warning('Vui lòng tải danh sách khách hàng');
+            return;
+        }
+        if (!messageTemplate.trim()) {
+            message.warning('Vui lòng nhập nội dung tin nhắn (tab Soạn tin nhắn)');
+            return;
+        }
+        if (greetingTemplate.length > 150) {
+            message.warning('Nội dung lời mời kết bạn tối đa 150 ký tự');
+            return;
+        }
+
+        const validCustomers = customers.filter(customer => String(customer.phone || '').trim());
+        if (validCustomers.length === 0) {
+            message.warning('Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ');
+            return;
+        }
+
+        setLoading(prev => ({ ...prev, addFriendsAndSend: true }));
+        markPendingStatus('add_friends_and_send');
+        try {
+            const payload = validCustomers.map((customer) => {
+                const next = { ...customer };
+                delete next._key;
+                return next;
+            });
+            await zaloAPI.addFriendsAndSend({
+                customers: payload,
+                greeting_template: greetingTemplate,
+                message_template: messageTemplate,
+                attachment_filename: attachmentFilename || null,
+            });
+            message.success('Đã bắt đầu tác vụ kết bạn rồi gửi tin nhắn');
+        } catch (error) {
+            message.error(error.response?.data?.detail || 'Không thể chạy tác vụ kết bạn rồi gửi tin');
+            setLoading(prev => ({ ...prev, addFriendsAndSend: false }));
         }
     };
 
@@ -447,17 +712,23 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         { title: 'Tên', dataIndex: 'name', key: 'name', width: 220 },
         { title: 'Mã HĐ', dataIndex: 'contract_id', key: 'contract_id', width: 160 },
         {
-            title: 'Trạng thái',
-            key: 'taskStatus',
+            title: 'Kết bạn',
+            key: 'friendStatus',
             dataIndex: 'taskStatus',
-            width: 240,
+            width: 210,
             render: (taskStatusValue) => {
-                if (!taskStatusValue?.code) {
-                    return <span style={{ opacity: 0.65 }}>Chưa thao tác</span>;
-                }
-
-                const meta = STATUS_META[taskStatusValue.code] || STATUS_META.failed;
-                return <Tag color={meta.color}>{taskStatusValue.text || meta.label}</Tag>;
+                const split = splitTaskStatus(taskStatusValue);
+                return renderStatusTag(split.friend, FRIEND_STATUS_META);
+            }
+        },
+        {
+            title: 'Gửi tin',
+            key: 'sendStatus',
+            dataIndex: 'taskStatus',
+            width: 210,
+            render: (taskStatusValue) => {
+                const split = splitTaskStatus(taskStatusValue);
+                return renderStatusTag(split.send, SEND_STATUS_META);
             }
         },
         {
@@ -529,36 +800,118 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
                     </Card>
                 </Col>
 
-                {/* Soạn tin nhắn */}
+                {/* Soạn nội dung */}
                 <Col xs={24}>
-                    <Card title="Soạn tin nhắn" className="message-card">
-                        <div className="template-variable-toolbar">
-                            <div className="template-variable-label">Chèn nhanh thông tin:</div>
-                            <div className="template-variable-buttons">
-                                {TEMPLATE_VARIABLES.map(item => (
-                                    <Button
-                                        key={item.value}
-                                        size="small"
-                                        className="template-variable-btn"
-                                        onClick={() => insertTemplateVariable(item.value)}
-                                        disabled={isLocked}
-                                    >
-                                        {item.label}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-                        <TextArea
-                            ref={messageInputRef}
-                            rows={4}
-                            placeholder="Nhập nội dung tin nhắn. Sử dụng các nút {name}, {gender}, {contract_id}... để chèn nhanh thông tin khách hàng"
-                            value={messageTemplate}
-                            onChange={(e) => setMessageTemplate(e.target.value)}
-                            disabled={isLocked}
+                    <Card title="Soạn nội dung" className="message-card">
+                        <Tabs
+                            size="small"
+                            activeKey={activeComposeTab}
+                            onChange={setActiveComposeTab}
+                            items={[
+                                {
+                                    key: 'message',
+                                    label: 'Soạn tin nhắn',
+                                    children: (
+                                        <>
+                                            <div className="template-variable-toolbar">
+                                                <div className="template-variable-label">Chèn nhanh thông tin:</div>
+                                                <div className="template-variable-buttons">
+                                                    {TEMPLATE_VARIABLES.map(item => (
+                                                        <Button
+                                                            key={item.value}
+                                                            size="small"
+                                                            className="template-variable-btn"
+                                                            onClick={() => insertTemplateVariable(item.value)}
+                                                            disabled={isLocked}
+                                                        >
+                                                            {item.label}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <TextArea
+                                                ref={messageInputRef}
+                                                rows={4}
+                                                placeholder="Nhập nội dung tin nhắn. Sử dụng các nút {name}, {gender}, {contract_id}... để chèn nhanh thông tin khách hàng"
+                                                value={messageTemplate}
+                                                onChange={(e) => setMessageTemplate(e.target.value)}
+                                                disabled={isLocked}
+                                            />
+                                            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                                <Upload
+                                                    accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif"
+                                                    showUploadList={false}
+                                                    beforeUpload={() => false}
+                                                    onChange={handleUploadAttachment}
+                                                    disabled={isLocked || uploadingAttachment}
+                                                >
+                                                    <Button
+                                                        icon={<UploadOutlined />}
+                                                        loading={uploadingAttachment}
+                                                        disabled={isLocked || uploadingAttachment}
+                                                    >
+                                                        Đính kèm ảnh
+                                                    </Button>
+                                                </Upload>
+                                                {attachmentFilename && (
+                                                    <>
+                                                        <span style={{ color: '#1677ff' }}>Ảnh đã chọn: {attachmentFilename}</span>
+                                                        <Button
+                                                            size="small"
+                                                            icon={<DeleteOutlined />}
+                                                            onClick={clearAttachment}
+                                                            disabled={isLocked || uploadingAttachment}
+                                                        >
+                                                            Xóa ảnh
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <div className="template-variable-hint">
+                                                Nội dung này dùng cho nút Gửi tin nhắn hàng loạt và Kết bạn rồi gửi nội dung tin nhắn.
+                                            </div>
+                                        </>
+                                    ),
+                                },
+                                {
+                                    key: 'invite',
+                                    label: 'Nội dung lời mời kết bạn',
+                                    children: (
+                                        <>
+                                            <div className="template-variable-toolbar">
+                                                <div className="template-variable-label">Chèn nhanh thông tin:</div>
+                                                <div className="template-variable-buttons">
+                                                    {TEMPLATE_VARIABLES.map(item => (
+                                                        <Button
+                                                            key={`invite-${item.value}`}
+                                                            size="small"
+                                                            className="template-variable-btn"
+                                                            onClick={() => insertTemplateVariable(item.value)}
+                                                            disabled={isLocked}
+                                                        >
+                                                            {item.label}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <TextArea
+                                                ref={greetingInputRef}
+                                                rows={3}
+                                                maxLength={150}
+                                                showCount
+                                                placeholder="Nhập nội dung lời mời kết bạn (tối đa 150 ký tự)"
+                                                value={greetingTemplate}
+                                                onChange={(e) => setGreetingTemplate(e.target.value.slice(0, 150))}
+                                                disabled={isLocked}
+                                            />
+                                            <div className="template-variable-hint">
+                                                Nội dung này chỉ dùng cho thao tác kết bạn. Tối đa 150 ký tự.
+                                            </div>
+                                        </>
+                                    ),
+                                },
+                            ]}
                         />
-                        <div className="template-variable-hint">
-                            Các biến sẽ được thay bằng dữ liệu từng khách hàng khi gửi hoặc kết bạn hàng loạt.
-                        </div>
                         <div className="zalo-actions">
                             <Button
                                 type="primary"
@@ -580,6 +933,17 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
                                 className="friend-btn"
                             >
                                 Kết bạn hàng loạt
+                            </Button>
+                            <Button
+                                type="default"
+                                icon={<UserAddOutlined />}
+                                onClick={handleAddFriendsAndSend}
+                                loading={loading.addFriendsAndSend}
+                                disabled={isLocked}
+                                size="large"
+                                className="friend-btn"
+                            >
+                                Kết bạn rồi gửi nội dung tin nhắn
                             </Button>
                         </div>
                     </Card>

@@ -160,6 +160,7 @@ export const zaloAPI = {
     // Automation
     sendMessages: (data) => api.post('/zalo/send-messages', data),
     addFriends: (data) => api.post('/zalo/add-friends', data),
+    addFriendsAndSend: (data) => api.post('/zalo/add-friends-and-send', data),
 
     pause: () => api.post('/zalo/pause'),
     resume: () => api.post('/zalo/resume'),

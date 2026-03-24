@@ -3,12 +3,13 @@ Zalo API Routes
 API endpoints cho các tính năng Zalo automation
 """
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 import asyncio
 import concurrent.futures
 import threading
 import time
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 from datetime import datetime
 
@@ -124,12 +125,49 @@ class SendMessageRequest(BaseModel):
     customers: List[dict]  # List of {phone, name, contract_id, ...}
     message_template: str
     check_friend_status: Optional[bool] = True
+    attachment_filename: Optional[str] = None
 
 
 class AddFriendRequest(BaseModel):
     """Schema cho kết bạn"""
     customers: List[dict]
-    greeting_template: Optional[str] = ""
+    greeting_template: Optional[str] = Field(default="", max_length=150)
+
+
+class AddFriendAndSendRequest(BaseModel):
+    """Schema cho kết bạn rồi gửi tin nhắn"""
+    customers: List[dict]
+    greeting_template: Optional[str] = Field(default="", max_length=150)
+    message_template: str
+    attachment_filename: Optional[str] = None
+
+
+_ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _resolve_uploaded_image_path(attachment_filename: Optional[str]) -> Optional[str]:
+    """Resolve safe absolute path for an uploaded image in app_data/uploads."""
+    raw_name = str(attachment_filename or "").strip()
+    if not raw_name:
+        return None
+
+    safe_name = Path(raw_name).name
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Tên file ảnh đính kèm không hợp lệ")
+
+    ext = Path(safe_name).suffix.lower()
+    if ext not in _ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Ảnh đính kèm phải là PNG/JPG/JPEG/WEBP/GIF")
+
+    upload_dir = APP_DATA_DIR / "uploads"
+    resolved = (upload_dir / safe_name).resolve()
+    if resolved.parent != upload_dir.resolve():
+        raise HTTPException(status_code=400, detail="Đường dẫn ảnh đính kèm không hợp lệ")
+
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=400, detail="Không tìm thấy ảnh đính kèm trên server")
+
+    return str(resolved)
 
 
 # ============== Session Helpers ==============
@@ -661,6 +699,8 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
     valid_customers = [customer for customer in request.customers if str(customer.get("phone", "")).strip()]
     if not valid_customers:
         raise HTTPException(status_code=400, detail="Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ")
+
+    attachment_path = _resolve_uploaded_image_path(request.attachment_filename)
     
     _start_zalo_task("send_messages")
     
@@ -669,7 +709,8 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
         current_user["id"],
         valid_customers,
         request.message_template,
-        request.check_friend_status
+        request.check_friend_status,
+        attachment_path,
     )
     
     return {
@@ -678,7 +719,7 @@ async def send_messages(request: SendMessageRequest, background_tasks: Backgroun
     }
 
 
-async def run_send_messages_task(user_id, customers, message_template, check_friend_status):
+async def run_send_messages_task(user_id, customers, message_template, check_friend_status, attachment_path: Optional[str] = None):
     """Background task để gửi tin nhắn.
     Mỗi lần gọi tự mở browser theo cấu hình headless ở Trang Chủ,
     chạy xong đóng lại.
@@ -737,7 +778,8 @@ async def run_send_messages_task(user_id, customers, message_template, check_fri
                     is_paused_func=is_paused,
                     is_stop_func=is_stop,
                     my_name=zalo_state.get("zalo_name", ""),
-                    check_friend_status=check_friend_status
+                    check_friend_status=check_friend_status,
+                    attachment_path=attachment_path,
                 )
             finally:
                 try:
@@ -808,7 +850,14 @@ async def run_add_friends_task(user_id, customers, greeting_template):
         def do_add_friends():
             import time
             import random
-            from logic.zalo_automation import ZaloAutomation, BrowserClosedError, is_browser_closed_error, to_gender_pronoun
+            from logic.zalo_automation import (
+                ZaloAutomation,
+                BrowserClosedError,
+                ZaloRateLimitError,
+                is_browser_closed_error,
+                is_rate_limit_error,
+                to_gender_pronoun,
+            )
 
             mode_text = "ẩn" if headless else "hiện"
             asyncio.run_coroutine_threadsafe(
@@ -909,6 +958,23 @@ async def run_add_friends_task(user_id, customers, greeting_template):
                         )
                     except Exception as e:
                         err_str = str(e)
+                        if isinstance(e, ZaloRateLimitError) or is_rate_limit_error(e):
+                            asyncio.run_coroutine_threadsafe(
+                                log_to_ws(
+                                    f"🚫 Zalo đang giới hạn tìm kiếm/kết bạn do chống spam. {err_str}",
+                                    "error"
+                                ),
+                                loop
+                            )
+                            results.append({
+                                "phone": phone,
+                                "name": name,
+                                "status": "rate_limited",
+                                "display_name": None,
+                                "error": err_str,
+                            })
+                            raise ZaloRateLimitError(err_str) from e
+
                         if isinstance(e, BrowserClosedError) or is_browser_closed_error(e):
                             asyncio.run_coroutine_threadsafe(
                                 log_to_ws("🛑 Trình duyệt đã bị đóng, dừng toàn bộ tác vụ kết bạn.", "error"),
@@ -993,8 +1059,355 @@ async def run_add_friends_task(user_id, customers, greeting_template):
         await manager.broadcast_status("completed", {"task": "add_friends", "results": results})
 
     except Exception as e:
-        await log_to_ws(f"Lỗi: {str(e)}", "error")
-        await manager.broadcast_status("error", {"task": "add_friends", "error": str(e)})
+        error_text = str(e)
+        if any(
+            marker in error_text.lower()
+            for marker in [
+                "tìm số điện thoại quá nhiều lần trong 1 giờ",
+                "hoạt động bất thường",
+                "bạn hãy thử lại vào",
+            ]
+        ):
+            await log_to_ws(
+                f"🚫 Tác vụ đã dừng: Zalo giới hạn thao tác kết bạn/tìm kiếm. {error_text}",
+                "error"
+            )
+        else:
+            await log_to_ws(f"Lỗi: {error_text}", "error")
+
+        await manager.broadcast_status("error", {"task": "add_friends", "error": error_text})
+    finally:
+        _finish_zalo_task()
+
+
+@router.post("/add-friends-and-send")
+async def add_friends_and_send(
+    request: AddFriendAndSendRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(require_roles("admin", "user")),
+):
+    """Kết bạn rồi gửi tin nhắn ngay sau đó (nếu có thể)."""
+    session_state = await resolve_session_state(current_user["id"], verify=False)
+    if not session_state["session_active"]:
+        raise HTTPException(status_code=400, detail="Please login to Zalo first")
+
+    if not request.customers:
+        raise HTTPException(status_code=400, detail="Customer list is empty")
+
+    if not str(request.message_template or "").strip():
+        raise HTTPException(status_code=400, detail="Message template is required")
+
+    valid_customers = [customer for customer in request.customers if str(customer.get("phone", "")).strip()]
+    if not valid_customers:
+        raise HTTPException(status_code=400, detail="Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ")
+
+    attachment_path = _resolve_uploaded_image_path(request.attachment_filename)
+
+    _start_zalo_task("add_friends_and_send")
+
+    background_tasks.add_task(
+        run_add_friends_and_send_task,
+        current_user["id"],
+        valid_customers,
+        request.greeting_template,
+        request.message_template,
+        attachment_path,
+    )
+
+    return {
+        "status": "started",
+        "message": f"Bắt đầu kết bạn rồi gửi tin nhắn cho {len(valid_customers)} khách hàng",
+    }
+
+
+async def run_add_friends_and_send_task(user_id, customers, greeting_template, message_template, attachment_path: Optional[str] = None):
+    """Background task để kết bạn rồi gửi tin nhắn ngay sau đó.
+    Quy tắc:
+    - Nếu bị rate-limit chống spam kết bạn: dừng toàn bộ tác vụ ngay.
+    - Nếu kết bạn được/đã là bạn/đã gửi lời mời trước đó: thử gửi tin nhắn.
+    """
+    try:
+        await log_to_ws(f"Bắt đầu kết bạn rồi gửi tin nhắn cho {len(customers)} khách hàng", "info")
+        await manager.broadcast_status("running", {"task": "add_friends_and_send"})
+
+        loop = asyncio.get_running_loop()
+        headless = load_config().get("headless", False)
+
+        def do_add_and_send():
+            import time
+            import random
+            from logic.zalo_automation import (
+                ZaloAutomation,
+                BrowserClosedError,
+                ZaloRateLimitError,
+                is_browser_closed_error,
+                is_rate_limit_error,
+                to_gender_pronoun,
+            )
+
+            mode_text = "ẩn" if headless else "hiện"
+            asyncio.run_coroutine_threadsafe(
+                log_to_ws(f"🌐 Đang mở Zalo để kết bạn + gửi tin (chế độ {mode_text})...", "info"), loop
+            )
+            session_manager = get_session_manager(user_id)
+            success, p, context, page = session_manager.connect_with_session(headless=headless)
+            if not success:
+                zalo_state["session_active"] = False
+                asyncio.run_coroutine_threadsafe(
+                    log_to_ws("⚠️ Session Zalo không còn hợp lệ khi bắt đầu tác vụ. Browser sẽ đóng và yêu cầu đăng nhập lại.", "warning"),
+                    loop
+                )
+                asyncio.run_coroutine_threadsafe(
+                    manager.broadcast_status("session_state", {
+                        "task": "zalo_session",
+                        "session_active": False,
+                        "zalo_name": "",
+                    }),
+                    loop
+                )
+                raise Exception("Session Zalo đã hết hạn — vui lòng đăng nhập lại")
+
+            asyncio.run_coroutine_threadsafe(
+                log_to_ws("✅ Đã kết nối Zalo, bắt đầu kết bạn + gửi tin...", "success"), loop
+            )
+
+            try:
+                automation = ZaloAutomation(page)
+                my_name = automation.get_my_zalo_name(session_manager)
+                asyncio.run_coroutine_threadsafe(
+                    log_to_ws(f"👤 Tài khoản Zalo: {my_name}", "info"), loop
+                )
+
+                sent_after_add_count = 0
+                add_success_count = 0
+                failed_count = 0
+                already_sent_count = 0
+                already_friend_count = 0
+                results = []
+
+                customers_with_phone = [c for c in customers if c.get("phone", "").strip()]
+
+                for i, customer in enumerate(customers_with_phone):
+                    if zalo_state["stop_requested"]:
+                        asyncio.run_coroutine_threadsafe(
+                            log_to_ws("🛑 Đã nhận lệnh dừng, thoát vòng kết bạn + gửi tin.", "warning"),
+                            loop
+                        )
+                        break
+
+                    while zalo_state["is_paused"] and not zalo_state["stop_requested"]:
+                        time.sleep(random.uniform(0.4, 0.6))
+
+                    if zalo_state["stop_requested"]:
+                        break
+
+                    phone = customer.get("phone", "").strip()
+                    name = customer.get("name", "N/A")
+                    contract_id = customer.get("contract_id", "")
+                    gender_pronoun = to_gender_pronoun(customer.get("gender", ""))
+
+                    if greeting_template:
+                        try:
+                            formatted_greeting = greeting_template.format(
+                                name=name,
+                                phone=phone,
+                                contract_id=contract_id,
+                                my_name=my_name,
+                                gender=gender_pronoun,
+                                address=customer.get("address", ""),
+                                cccd=customer.get("cccd", ""),
+                                dob=customer.get("dob", "")
+                            )
+                        except (KeyError, ValueError):
+                            formatted_greeting = greeting_template
+                    else:
+                        formatted_greeting = ""
+
+                    try:
+                        formatted_message = message_template.format(
+                            name=name,
+                            phone=phone,
+                            contract_id=contract_id,
+                            my_name=my_name,
+                            gender=gender_pronoun,
+                            address=customer.get("address", ""),
+                            cccd=customer.get("cccd", ""),
+                            dob=customer.get("dob", "")
+                        )
+                    except (KeyError, ValueError):
+                        formatted_message = message_template
+
+                    asyncio.run_coroutine_threadsafe(
+                        log_to_ws(f"🤝💬 [{i+1}/{len(customers_with_phone)}] Kết bạn rồi gửi tin: {name} ({phone})", "info"),
+                        loop
+                    )
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast_progress(i + 1, len(customers_with_phone), f"Đang xử lý: {phone}"),
+                        loop
+                    )
+
+                    try:
+                        add_result, display_name = automation.add_friend_by_phone(
+                            phone_number=phone,
+                            contract_id=contract_id,
+                            my_zalo_name=my_name,
+                            greeting_template=formatted_greeting,
+                        )
+                    except Exception as e:
+                        err_str = str(e)
+                        if isinstance(e, ZaloRateLimitError) or is_rate_limit_error(e):
+                            asyncio.run_coroutine_threadsafe(
+                                log_to_ws(f"🚫 Zalo đang giới hạn tìm kiếm/kết bạn do chống spam. {err_str}", "error"),
+                                loop
+                            )
+                            results.append({
+                                "phone": phone,
+                                "name": name,
+                                "status": "rate_limited",
+                                "display_name": None,
+                                "error": err_str,
+                            })
+                            raise ZaloRateLimitError(err_str) from e
+
+                        if isinstance(e, BrowserClosedError) or is_browser_closed_error(e):
+                            asyncio.run_coroutine_threadsafe(
+                                log_to_ws("🛑 Trình duyệt đã bị đóng, dừng toàn bộ tác vụ kết bạn + gửi tin.", "error"),
+                                loop
+                            )
+                            raise BrowserClosedError("Trình duyệt Zalo đã bị đóng trong khi kết bạn + gửi tin") from e
+
+                        asyncio.run_coroutine_threadsafe(
+                            log_to_ws(f"❌ [{i+1}/{len(customers_with_phone)}] Lỗi kết bạn: {phone} — {err_str}", "error"),
+                            loop
+                        )
+                        results.append({"phone": phone, "name": name, "status": "error", "display_name": None})
+                        failed_count += 1
+                        try:
+                            automation.close_modal_after_add_friend()
+                        except Exception:
+                            pass
+                        time.sleep(2)
+                        continue
+
+                    try:
+                        automation.close_modal_after_add_friend()
+                    except Exception:
+                        pass
+
+                    should_send_message = False
+                    status_prefix = ""
+                    if add_result == "already_sent":
+                        already_sent_count += 1
+                        status_prefix = "already_sent"
+                        should_send_message = True
+                    elif add_result == "already_friend":
+                        already_friend_count += 1
+                        status_prefix = "already_friend"
+                        should_send_message = True
+                    elif add_result:
+                        add_success_count += 1
+                        status_prefix = "success"
+                        should_send_message = True
+                    else:
+                        failed_count += 1
+                        asyncio.run_coroutine_threadsafe(
+                            log_to_ws(f"❌ [{i+1}/{len(customers_with_phone)}] Kết bạn thất bại: {phone}", "error"),
+                            loop
+                        )
+                        results.append({"phone": phone, "name": name, "status": "failed", "display_name": None})
+
+                    if should_send_message:
+                        try:
+                            send_ok, _friend_status, send_error = automation.send_message_to_phone(
+                                phone_number=phone,
+                                message=formatted_message,
+                                check_status=False,
+                                image_path=attachment_path,
+                            )
+                        except Exception as e:
+                            if isinstance(e, BrowserClosedError) or is_browser_closed_error(e):
+                                asyncio.run_coroutine_threadsafe(
+                                    log_to_ws("🛑 Trình duyệt đã bị đóng, dừng toàn bộ tác vụ kết bạn + gửi tin.", "error"),
+                                    loop
+                                )
+                                raise BrowserClosedError("Trình duyệt Zalo đã bị đóng khi gửi tin sau kết bạn") from e
+                            send_ok = False
+                            send_error = str(e)
+
+                        if send_ok:
+                            sent_after_add_count += 1
+                            final_status = (
+                                "already_friend_sent" if status_prefix == "already_friend"
+                                else "already_sent_and_sent" if status_prefix == "already_sent"
+                                else "success_and_sent"
+                            )
+                            asyncio.run_coroutine_threadsafe(
+                                log_to_ws(f"✅ [{i+1}/{len(customers_with_phone)}] Kết bạn + gửi tin thành công: {phone}", "success"),
+                                loop
+                            )
+                            results.append({"phone": phone, "name": name, "status": final_status, "display_name": display_name})
+                        else:
+                            failed_count += 1
+                            final_status = f"{status_prefix}_send_failed" if status_prefix else "send_failed"
+                            asyncio.run_coroutine_threadsafe(
+                                log_to_ws(f"⚠️ [{i+1}/{len(customers_with_phone)}] Kết bạn xong nhưng gửi tin thất bại: {phone} ({send_error or 'send_failed'})", "warning"),
+                                loop
+                            )
+                            results.append({
+                                "phone": phone,
+                                "name": name,
+                                "status": final_status,
+                                "display_name": display_name,
+                                "error": send_error,
+                            })
+
+                    if i < len(customers_with_phone) - 1:
+                        delay = random.uniform(2.5, 3.5)
+                        time.sleep(delay)
+
+                asyncio.run_coroutine_threadsafe(
+                    log_to_ws(
+                        f"📊 Kết quả (kết bạn + gửi tin): "
+                        f"{add_success_count} kết bạn mới, "
+                        f"{already_friend_count} đã là bạn, "
+                        f"{already_sent_count} đã gửi lời mời trước, "
+                        f"{sent_after_add_count} gửi tin thành công, "
+                        f"{failed_count} thất bại",
+                        "info"
+                    ),
+                    loop
+                )
+                return results
+
+            finally:
+                try:
+                    context.close()
+                    p.stop()
+                except Exception:
+                    pass
+
+        results = await loop.run_in_executor(_executor, do_add_and_send)
+
+        await log_to_ws("✅ Hoàn thành kết bạn rồi gửi tin nhắn", "success")
+        await manager.broadcast_status("completed", {"task": "add_friends_and_send", "results": results})
+
+    except Exception as e:
+        error_text = str(e)
+        if any(
+            marker in error_text.lower()
+            for marker in [
+                "tìm số điện thoại quá nhiều lần trong 1 giờ",
+                "hoạt động bất thường",
+                "bạn hãy thử lại vào",
+            ]
+        ):
+            await log_to_ws(
+                f"🚫 Tác vụ đã dừng: Zalo giới hạn thao tác kết bạn/tìm kiếm. {error_text}",
+                "error"
+            )
+        else:
+            await log_to_ws(f"Lỗi: {error_text}", "error")
+        await manager.broadcast_status("error", {"task": "add_friends_and_send", "error": error_text})
     finally:
         _finish_zalo_task()
 

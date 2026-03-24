@@ -78,6 +78,7 @@ const TASK_LABELS = {
   zalo_login: 'Login Zalo',
   send_messages: 'Gửi tin nhắn Zalo',
   add_friends: 'Kết bạn Zalo',
+  add_friends_and_send: 'Kết bạn rồi gửi tin Zalo',
 };
 
 const HELP_GUIDES = {
@@ -143,7 +144,6 @@ function App() {
   const { logs, status, progress, taskStatus, qrImage } = useWebSocket();
   const lastTaskStatusRef = useRef('');
   const lastProgressRef = useRef(-1);
-  const lastLogRef = useRef('');
   const prevWsStatusRef = useRef('');
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -255,14 +255,7 @@ function App() {
     lastTaskStatusRef.current = dedupeKey;
 
     const taskLabel = TASK_LABELS[taskKey] || taskKey;
-    if (taskStatus.status === 'running' || taskStatus.status === 'active') {
-      pushNotification({
-        key: 'task-runtime',
-        level: 'info',
-        text: `${taskLabel}: đang thực thi...`,
-      });
-      return;
-    }
+    if (taskStatus.status === 'running' || taskStatus.status === 'active') return;
 
     if (taskStatus.status === 'paused') {
       pushNotification({
@@ -274,19 +267,27 @@ function App() {
     }
 
     if (taskStatus.status === 'completed') {
+      const summary = taskStatus?.data?.progress_summary;
+      const summaryText = summary && Number(summary.total) > 0
+        ? ` (${Number(summary.current || 0)}/${Number(summary.total)})`
+        : '';
       pushNotification({
         key: 'task-runtime',
         level: 'success',
-        text: `${taskLabel}: hoàn tất`,
+        text: `${taskLabel}: hoàn tất${summaryText}`,
       });
       return;
     }
 
     if (taskStatus.status === 'error') {
+      const errorText = String(taskStatus?.data?.error || '').trim();
+      const isRateLimited = /Tìm số điện thoại quá nhiều lần|hoạt động bất thường|Bạn hãy thử lại vào/i.test(errorText);
       pushNotification({
         key: 'task-runtime',
         level: 'error',
-        text: `${taskLabel}: xảy ra lỗi, vui lòng kiểm tra lại`,
+        text: isRateLimited
+          ? `${taskLabel}: Zalo đang giới hạn thao tác tìm kiếm/kết bạn. ${errorText}`
+          : `${taskLabel}: ${errorText || 'xảy ra lỗi, vui lòng kiểm tra lại'}`,
         important: true,
         duration: 4,
       });
@@ -304,49 +305,21 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !progress) return;
-    if (String(progress.message || '').includes('Đang xử lý:')) return;
+
     const percent = Number(progress.percentage || 0);
     if (Number.isNaN(percent)) return;
 
     const rounded = Math.max(0, Math.min(100, Math.round(percent)));
-    const shouldNotify = rounded === 100 || rounded % 20 === 0;
+    const shouldNotify = rounded === 100;
     if (!shouldNotify || lastProgressRef.current === rounded) return;
 
     lastProgressRef.current = rounded;
     pushNotification({
       key: `task-progress-${rounded}`,
-      level: rounded === 100 ? 'success' : 'info',
+      level: 'success',
       text: `${progress.message || 'Tiến trình'}: ${rounded}%`,
     });
   }, [isAuthenticated, progress, pushNotification]);
-
-  useEffect(() => {
-    if (!isAuthenticated || logs.length === 0) return;
-
-    const latest = logs[logs.length - 1];
-    const logKey = `${latest.timestamp || ''}:${latest.level || ''}:${latest.message || ''}`;
-    if (lastLogRef.current === logKey) return;
-    lastLogRef.current = logKey;
-
-    const text = String(latest.message || '').trim();
-    if (!text) return;
-
-    const isPerCustomerRealtime = /(\[[0-9]+\/[0-9]+\].*(Kết bạn|gửi|Thất bại|Đã là bạn bè)|Đang xử lý:\s*[0-9]{8,15})/i.test(text);
-    if (isPerCustomerRealtime) return;
-
-    const level = latest.level || 'info';
-    const looksLikeStep = /bước|step|dang |đang /i.test(text);
-    if (level === 'info' && !looksLikeStep) return;
-
-    const mappedLevel = level === 'error' ? 'error' : level === 'warning' ? 'warning' : level === 'success' ? 'success' : 'info';
-    pushNotification({
-      key: `ws-log-${latest.timestamp || Date.now()}`,
-      level: mappedLevel,
-      text,
-      important: mappedLevel === 'error' || mappedLevel === 'warning',
-      duration: mappedLevel === 'error' ? 4 : 3,
-    });
-  }, [isAuthenticated, logs, pushNotification]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

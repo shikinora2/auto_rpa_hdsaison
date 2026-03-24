@@ -11,6 +11,7 @@ import concurrent.futures
 from pathlib import Path
 import shutil
 from datetime import datetime
+import re
 
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
@@ -108,6 +109,100 @@ def _create_task_zip_artifact(save_directory: str, start_date_ddmmyyyy: str, tas
         return None
 
 
+def _new_progress_tracker(task_name: str) -> dict:
+    return {
+        "task": task_name,
+        "total": 0,
+        "current": 0,
+        "last_key": None,
+    }
+
+
+def _broadcast_progress_from_thread(loop, tracker: dict, current: int, total: int, message: str):
+    if total <= 0:
+        return
+
+    normalized_current = max(0, min(current, total))
+    key = (normalized_current, total, message)
+    if tracker.get("last_key") == key:
+        return
+
+    tracker["total"] = total
+    tracker["current"] = normalized_current
+    tracker["last_key"] = key
+
+    asyncio.run_coroutine_threadsafe(
+        manager.broadcast_progress(normalized_current, total, message),
+        loop,
+    )
+
+
+def _track_rpa_progress(loop, tracker: dict, message: str):
+    text = str(message or "").strip()
+    if not text:
+        return
+
+    total = int(tracker.get("total") or 0)
+
+    # Mốc tổng số hợp đồng
+    total_match = (
+        re.search(r"Tìm thấy\s+(\d+)\s+ID hợp đồng", text, flags=re.IGNORECASE)
+        or re.search(r"TỔNG CỘNG\s+(\d+)\s+HỢP ĐỒNG", text, flags=re.IGNORECASE)
+        or re.search(r"BẮT ĐẦU\s+(?:XỬ LÝ|CÀO).*?(\d+)\s+HỢP ĐỒNG", text, flags=re.IGNORECASE)
+    )
+    if total_match:
+        total = int(total_match.group(1))
+        _broadcast_progress_from_thread(loop, tracker, 0, total, f"Tổng số hợp đồng: {total}")
+
+    # Mốc đang quét hợp đồng thứ bao nhiêu
+    current_match = re.search(r"HĐ\s*#\s*(\d+)\s*/\s*(\d+)", text, flags=re.IGNORECASE)
+    if current_match:
+        current = int(current_match.group(1))
+        total_from_message = int(current_match.group(2))
+        total = total_from_message if total_from_message > 0 else total
+        _broadcast_progress_from_thread(
+            loop,
+            tracker,
+            current,
+            total,
+            f"Đang quét hợp đồng {current}/{total}",
+        )
+
+    # Mốc hoàn tất
+    done_match = (
+        re.search(r"HOÀN TẤT!\s*ĐÃ\s*XỬ\s*LÝ\s*TẤT\s*CẢ\s*(\d+)\s*HỢP\s*ĐỒNG", text, flags=re.IGNORECASE)
+        or re.search(r"KIỂM TRA\s*HOÀN\s*TẤT:\s*TÌM\s*THẤY\s*TỔNG\s*CỘNG\s*(\d+)\s*HỢP\s*ĐỒNG", text, flags=re.IGNORECASE)
+    )
+    if done_match:
+        done_total = int(done_match.group(1))
+        _broadcast_progress_from_thread(
+            loop,
+            tracker,
+            done_total,
+            done_total,
+            f"Hoàn tất quét {done_total}/{done_total} hợp đồng",
+        )
+
+
+def _build_progress_summary(tracker: dict) -> Optional[dict]:
+    total = int(tracker.get("total") or 0)
+    current = int(tracker.get("current") or 0)
+    if total <= 0:
+        return None
+
+    normalized_current = max(0, min(current, total))
+    return {
+        "current": normalized_current,
+        "total": total,
+        "percentage": round((normalized_current / total) * 100, 1) if total else 0,
+        "message": (
+            f"Hoàn tất quét {normalized_current}/{total} hợp đồng"
+            if normalized_current >= total
+            else f"Đang quét hợp đồng {normalized_current}/{total}"
+        ),
+    }
+
+
 @router.get("/status")
 async def get_status():
     """Lấy trạng thái hiện tại của RPA"""
@@ -167,9 +262,11 @@ async def run_check_contracts_task(username, password, start_date, end_date, hea
         
         # Lấy event loop hiện tại
         loop = asyncio.get_running_loop()
+        progress_tracker = _new_progress_tracker("check_contracts")
         
         def callback(message):
             # Schedule coroutine trong event loop đang chạy
+            _track_rpa_progress(loop, progress_tracker, message)
             asyncio.run_coroutine_threadsafe(log_to_ws(message, "info"), loop)
         
         # Chạy sync function trong thread pool để không block event loop
@@ -184,9 +281,24 @@ async def run_check_contracts_task(username, password, start_date, end_date, hea
                 headless=headless
             )
         )
+
+        progress_summary = _build_progress_summary(progress_tracker)
+        if progress_summary and progress_summary["current"] < progress_summary["total"]:
+            _broadcast_progress_from_thread(
+                loop,
+                progress_tracker,
+                progress_summary["total"],
+                progress_summary["total"],
+                f"Hoàn tất quét {progress_summary['total']}/{progress_summary['total']} hợp đồng",
+            )
+            progress_summary = _build_progress_summary(progress_tracker)
         
         await log_to_ws(f"Hoàn thành kiểm tra: {result}", "success")
-        await manager.broadcast_status("completed", {"task": "check_contracts", "result": result})
+        await manager.broadcast_status("completed", {
+            "task": "check_contracts",
+            "result": result,
+            "progress_summary": progress_summary,
+        })
         
     except Exception as e:
         await log_to_ws(f"Lỗi: {str(e)}", "error")
@@ -238,8 +350,10 @@ async def run_download_files_task(username, password, start_date, end_date,
         from logic.rpa_logic import run_scrape_and_download_files
         
         loop = asyncio.get_running_loop()
+        progress_tracker = _new_progress_tracker("download_files")
         
         def callback(message):
+            _track_rpa_progress(loop, progress_tracker, message)
             asyncio.run_coroutine_threadsafe(log_to_ws(message, "info"), loop)
         
         result = await loop.run_in_executor(
@@ -256,6 +370,17 @@ async def run_download_files_task(username, password, start_date, end_date,
             )
         )
 
+        progress_summary = _build_progress_summary(progress_tracker)
+        if progress_summary and progress_summary["current"] < progress_summary["total"]:
+            _broadcast_progress_from_thread(
+                loop,
+                progress_tracker,
+                progress_summary["total"],
+                progress_summary["total"],
+                f"Hoàn tất quét {progress_summary['total']}/{progress_summary['total']} hợp đồng",
+            )
+            progress_summary = _build_progress_summary(progress_tracker)
+
         artifact_filename = _create_task_zip_artifact(save_directory, start_date, "rpa_downloads")
         if artifact_filename:
             await log_to_ws(f"Đã tạo file tải tự động: {artifact_filename}", "success")
@@ -265,6 +390,7 @@ async def run_download_files_task(username, password, start_date, end_date,
             "task": "download_files",
             "artifact_filename": artifact_filename,
             "result": result,
+            "progress_summary": progress_summary,
         })
         
     except Exception as e:
@@ -314,8 +440,10 @@ async def run_scrape_details_task(username, password, start_date, end_date,
         from logic.rpa_logic import run_scrape_and_export_details
         
         loop = asyncio.get_running_loop()
+        progress_tracker = _new_progress_tracker("scrape_details")
         
         def callback(message):
+            _track_rpa_progress(loop, progress_tracker, message)
             asyncio.run_coroutine_threadsafe(log_to_ws(message, "info"), loop)
         
         result = await loop.run_in_executor(
@@ -331,6 +459,17 @@ async def run_scrape_details_task(username, password, start_date, end_date,
             )
         )
 
+        progress_summary = _build_progress_summary(progress_tracker)
+        if progress_summary and progress_summary["current"] < progress_summary["total"]:
+            _broadcast_progress_from_thread(
+                loop,
+                progress_tracker,
+                progress_summary["total"],
+                progress_summary["total"],
+                f"Hoàn tất quét {progress_summary['total']}/{progress_summary['total']} hợp đồng",
+            )
+            progress_summary = _build_progress_summary(progress_tracker)
+
         artifact_filename = _create_task_zip_artifact(save_directory, start_date, "rpa_details")
         if artifact_filename:
             await log_to_ws(f"Đã tạo file tải tự động: {artifact_filename}", "success")
@@ -340,6 +479,7 @@ async def run_scrape_details_task(username, password, start_date, end_date,
             "task": "scrape_details",
             "artifact_filename": artifact_filename,
             "result": result,
+            "progress_summary": progress_summary,
         })
         
     except Exception as e:

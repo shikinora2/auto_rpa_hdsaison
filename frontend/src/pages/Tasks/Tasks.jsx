@@ -44,6 +44,7 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
     const [loading, setLoading] = useState({ check: false, download: false, scrape: false });
     const [sessionStatus, setSessionStatus] = useState(null);
     const [currentTask, setCurrentTask] = useState(null);
+    const [completedProgress, setCompletedProgress] = useState(null);
     const downloadedArtifactsRef = useRef(new Set());
     const restoredFormRef = useRef(false);
     const [persistedTaskForm, setPersistedTaskForm] = useUserPersistentState(userStorageKey, 'tasks.form', {
@@ -123,11 +124,37 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
 
         if (st === 'running' && TASK_MAP[task]) {
             setCurrentTask(task);
+            setCompletedProgress(null);
         }
         if (st === 'completed' || st === 'error') {
             const key = TASK_MAP[task];
             if (key) setLoading(prev => ({ ...prev, [key]: false }));
             setCurrentTask(null);
+
+            if (st === 'completed' && TASK_MAP[task]) {
+                const summary = taskStatus.data?.progress_summary;
+                if (summary && Number(summary.total) > 0) {
+                    setCompletedProgress({
+                        task,
+                        current: Number(summary.current || summary.total),
+                        total: Number(summary.total),
+                        percentage: Number(summary.percentage || 100),
+                        message: summary.message || `Hoàn tất quét ${summary.total}/${summary.total} hợp đồng`,
+                    });
+                } else {
+                    setCompletedProgress({
+                        task,
+                        current: 0,
+                        total: 0,
+                        percentage: 100,
+                        message: 'Tác vụ đã hoàn tất',
+                    });
+                }
+            }
+
+            if (st === 'error' && TASK_MAP[task]) {
+                setCompletedProgress(null);
+            }
 
             const artifactFilename = taskStatus.data?.artifact_filename;
             if (st === 'completed' && (task === 'download_files' || task === 'scrape_details') && artifactFilename) {
@@ -137,6 +164,7 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
         if (st === 'stopping') {
             setLoading({ check: false, download: false, scrape: false });
             setCurrentTask(null);
+            setCompletedProgress(null);
         }
     }, [taskStatus, triggerArtifactDownload]);
 
@@ -227,22 +255,31 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
                 />
             )}
 
-            {/* Running Progress Banner */}
-            {currentTask && (
+            {/* Running/Completed Progress Banner */}
+            {(currentTask || completedProgress) && (
                 <div className="task-running-banner">
                     <div className="task-running-left">
-                        <Tag color="processing">{TASK_LABELS[currentTask]}</Tag>
+                        <Tag color={currentTask ? 'processing' : 'success'}>
+                            {TASK_LABELS[currentTask || completedProgress?.task]}
+                        </Tag>
                         <span className="task-running-msg">
-                            {progress?.message || 'Đang xử lý...'}
+                            {currentTask
+                                ? (progress?.message || 'Đang xử lý...')
+                                : (completedProgress?.message || 'Hoàn tất')}
                         </span>
                     </div>
-                    {progress && (
+                    {(currentTask ? progress : completedProgress) && (
                         <div className="task-running-right">
                             <Progress
-                                percent={progress.percentage}
+                                percent={currentTask ? progress.percentage : completedProgress.percentage}
                                 size="small"
-                                status="active"
-                                format={() => `${progress.current}/${progress.total}`}
+                                status={currentTask ? 'active' : 'success'}
+                                format={() => {
+                                    const p = currentTask ? progress : completedProgress;
+                                    const current = Number(p?.current || 0);
+                                    const total = Number(p?.total || 0);
+                                    return total > 0 ? `${current}/${total}` : `${Math.round(Number(p?.percentage || 0))}%`;
+                                }}
                                 strokeColor={{ from: '#868CFF', to: '#4318FF' }}
                                 style={{ width: 200 }}
                             />
