@@ -12,6 +12,7 @@ import base64
 import mimetypes
 from pathlib import Path
 from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+from config.settings import ZALO_CHAT_URL
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -80,7 +81,7 @@ def to_gender_pronoun(value) -> str:
 class ZaloAutomation:
     """Class xử lý tự động hóa Zalo"""
 
-    CHAT_URL = "https://chat.zalo.me/"
+    CHAT_URL = ZALO_CHAT_URL
 
     # ==================== SELECTORS ====================
     # Nút "Phân loại" (Tag/Label button)

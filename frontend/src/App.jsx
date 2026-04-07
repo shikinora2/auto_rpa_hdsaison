@@ -20,9 +20,10 @@ import {
   TeamOutlined,
   BellOutlined,
   BookOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 
-import { authAPI, configAPI, rpaAPI, zaloAPI } from './services/api';
+import { authAPI, configAPI, rpaAPI, zaloAPI, adminCleanupAPI } from './services/api';
 import Dashboard from './pages/Dashboard';
 import Tasks from './pages/Tasks';
 import Zalo from './pages/Zalo';
@@ -80,6 +81,36 @@ const TASK_LABELS = {
   add_friends: 'Kết bạn Zalo',
   add_friends_and_send: 'Kết bạn rồi gửi tin Zalo',
 };
+
+const TAB_PATHS = {
+  dashboard: '/dashboard',
+  tasks: '/tasks',
+  zalo: '/zalo',
+  'sms-gateway': '/sms-gateway',
+  'admin-users': '/admin-users',
+};
+
+const AUTH_PATH = '/login';
+
+function normalizePathname(pathname) {
+  const raw = String(pathname || '').trim();
+  if (!raw) return '/';
+  const withSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  return withSlash.length > 1 ? withSlash.replace(/\/+$/, '') : withSlash;
+}
+
+function tabFromPath(pathname, isAdmin) {
+  const normalized = normalizePathname(pathname).toLowerCase();
+  const found = Object.entries(TAB_PATHS).find(([, path]) => path === normalized)?.[0];
+  if (!found) return 'dashboard';
+  if (found === 'admin-users' && !isAdmin) return 'dashboard';
+  return found;
+}
+
+function pathFromTab(tabKey, isAdmin) {
+  if (tabKey === 'admin-users' && !isAdmin) return TAB_PATHS.dashboard;
+  return TAB_PATHS[tabKey] || TAB_PATHS.dashboard;
+}
 
 const HELP_GUIDES = {
   dashboard: {
@@ -140,7 +171,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePwdForm] = Form.useForm();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => tabFromPath(window.location.pathname, false));
   const { logs, status, progress, taskStatus, qrImage } = useWebSocket();
   const lastTaskStatusRef = useRef('');
   const lastProgressRef = useRef(-1);
@@ -149,6 +180,7 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isResettingData, setIsResettingData] = useState(false);
 
   // System status — shared across header
   const [headless, setHeadless] = useState(false);
@@ -166,6 +198,40 @@ function App() {
         },
       ]
     : baseMenuItems;
+
+  useEffect(() => {
+    const onPopState = () => {
+      const currentPath = normalizePathname(window.location.pathname);
+      if (!isAuthenticated) {
+        if (currentPath !== AUTH_PATH) {
+          window.history.replaceState({}, '', AUTH_PATH);
+        }
+        return;
+      }
+      setActiveTab(tabFromPath(currentPath, isAdmin));
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isAuthenticated, isAdmin]);
+
+  useEffect(() => {
+    const currentPath = normalizePathname(window.location.pathname);
+
+    if (isAuthChecking) return;
+
+    if (!isAuthenticated) {
+      if (currentPath !== AUTH_PATH) {
+        window.history.replaceState({}, '', AUTH_PATH);
+      }
+      return;
+    }
+
+    const nextPath = pathFromTab(activeTab, isAdmin);
+    if (currentPath !== nextPath) {
+      window.history.replaceState({}, '', nextPath);
+    }
+  }, [isAuthenticated, isAuthChecking, activeTab, isAdmin]);
 
   const pushNotification = useCallback((entry) => {
     const nextItem = {
@@ -476,6 +542,8 @@ function App() {
   const handleLoginSuccess = (user) => {
     setCurrentUser(user || null);
     setIsAuthenticated(true);
+    setActiveTab('dashboard');
+    window.history.replaceState({}, '', TAB_PATHS.dashboard);
   };
 
   const handleLogout = async () => {
@@ -486,9 +554,61 @@ function App() {
     } finally {
       setCurrentUser(null);
       setIsAuthenticated(false);
+      setActiveTab('dashboard');
+      window.history.replaceState({}, '', AUTH_PATH);
       message.info('Đã đăng xuất');
     }
   };
+
+  const clearCurrentUserPersistentState = useCallback(() => {
+    const scope = userStorageKey || 'guest';
+    const prefix = `auto_rpa:${scope}:`;
+    const keysToDelete = [];
+
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        keysToDelete.push(key);
+      }
+    }
+
+    keysToDelete.forEach((key) => localStorage.removeItem(key));
+  }, [userStorageKey]);
+
+  const handleResetAllData = useCallback(() => {
+    Modal.confirm({
+      title: 'Reset toàn bộ dữ liệu làm việc?',
+      content: 'Hệ thống sẽ dừng tác vụ đang chạy, xóa session HPO/Zalo, lịch sử SMS, file upload khách hàng/đính kèm ở backend và xóa toàn bộ danh sách khách hàng + nội dung tin nhắn đang lưu ở frontend của user hiện tại.',
+      okText: 'Reset ngay',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: true },
+      centered: true,
+      onOk: async () => {
+        setIsResettingData(true);
+        try {
+          await adminCleanupAPI.resetRuntime();
+          clearCurrentUserPersistentState();
+
+          setNotifications([]);
+          setUnreadCount(0);
+          setActiveTab('dashboard');
+          setSessionStatus({ is_logged_in: false, checking: false });
+          setRpaStatus({ is_running: false, is_paused: false });
+          lastTaskStatusRef.current = '';
+          lastProgressRef.current = -1;
+          prevWsStatusRef.current = '';
+
+          message.success('Đã reset dữ liệu thành công. Đang làm mới giao diện...');
+          window.history.replaceState({}, '', TAB_PATHS.dashboard);
+          window.location.reload();
+        } catch (error) {
+          message.error(error?.response?.data?.detail || 'Reset dữ liệu thất bại');
+        } finally {
+          setIsResettingData(false);
+        }
+      },
+    });
+  }, [clearCurrentUserPersistentState]);
 
   const handleChangePassword = async () => {
     try {
@@ -645,6 +765,14 @@ function App() {
                 </Tooltip>
                 <Button size="small" onClick={() => setShowChangePassword(true)}>Đổi mật khẩu</Button>
                 <Button size="small" danger onClick={handleLogout}>Đăng xuất</Button>
+                <Button
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  loading={isResettingData}
+                  onClick={handleResetAllData}
+                >
+                  Reset dữ liệu
+                </Button>
                 {headerStats.map(stat => (
                   <Tooltip key={stat.key} title={<span><b>{stat.label}</b><br />{stat.value}</span>} placement="bottomRight">
                     <div className={`status-pill status-pill--${stat.iconClass}`}>
@@ -691,7 +819,12 @@ function App() {
               {dashboardView}
             </div>
             <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
-              <Tasks taskStatus={taskStatus} progress={progress} userStorageKey={userStorageKey} />
+              <Tasks
+                taskStatus={taskStatus}
+                progress={progress}
+                userStorageKey={userStorageKey}
+                sessionStatus={liveSessionStatus}
+              />
             </div>
             <div style={{ display: activeTab === 'zalo' ? 'block' : 'none' }}>
               <Zalo taskStatus={taskStatus} logs={logs} progress={progress} userStorageKey={userStorageKey} />

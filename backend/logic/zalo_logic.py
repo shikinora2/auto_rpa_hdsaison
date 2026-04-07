@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import logging
+from config.settings import ZALO_LOGIN_URL, ZALO_CHAT_URL, ZALO_CHAT_HOST, ZALO_ID_HOST
 
 # Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,8 +29,8 @@ SESSION_DIR = os.path.join(APP_DATA_DIR, "zalo_session")
 class ZaloLogin:
     """Xử lý đăng nhập Zalo Web sử dụng Playwright với Persistent Context"""
     
-    LOGIN_URL = "https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F"
-    CHAT_URL = "https://chat.zalo.me/"
+    LOGIN_URL = ZALO_LOGIN_URL
+    CHAT_URL = ZALO_CHAT_URL
     
     def __init__(self, page=None, context=None):
         """
@@ -86,9 +87,9 @@ class ZaloLogin:
                     continue
             
             # Nếu không tìm thấy QR code cụ thể, kiểm tra URL
-            # (bao gồm cả trường hợp user đã quét rất nhanh và trang chuyển sang chat.zalo.me)
+            # (bao gồm cả trường hợp user đã quét rất nhanh và trang chuyển sang chat host)
             current = self.page.url
-            if "id.zalo.me" in current or "chat.zalo.me" in current:
+            if ZALO_ID_HOST in current or ZALO_CHAT_HOST in current:
                 logger.info(f"✓ Đang ở trang đăng nhập / đã redirect: {current}")
                 return True
             
@@ -102,7 +103,7 @@ class ZaloLogin:
     def wait_for_user_scan(self, max_wait_time=300, on_detected=None):
         """
         Chờ người dùng quét mã QR và đăng nhập.
-        Xác định thành công khi URL chuyển sang chat.zalo.me.
+        Xác định thành công khi URL chuyển sang chat host.
         on_detected được gọi ngay lập tức khi URL đổi.
         """
         try:
@@ -111,8 +112,8 @@ class ZaloLogin:
 
             while time.time() - start_time < max_wait_time:
                 try:
-                    if "chat.zalo.me" in self.page.url:
-                        logger.info("✅ URL chuyển sang chat.zalo.me — đăng nhập thành công!")
+                    if ZALO_CHAT_HOST in self.page.url:
+                        logger.info("✅ URL chuyển sang chat host — đăng nhập thành công!")
                         if on_detected:
                             try:
                                 on_detected()
@@ -138,13 +139,13 @@ class ZaloLogin:
     def verify_login_success(self, timeout=30000):
         """
         Xác nhận đăng nhập thành công:
-        - URL là chat.zalo.me
+        - URL thuộc chat host
         - Avatar user (div.zavatar img) hoặc icon chat (i.fa-Message_28_Filled) hiển thị
         """
         try:
             logger.info("Đang xác nhận đăng nhập thành công...")
             
-            if "chat.zalo.me" not in self.page.url:
+            if ZALO_CHAT_HOST not in self.page.url:
                 logger.warning(f"URL không đúng: {self.page.url}")
                 return False
             
@@ -222,10 +223,10 @@ class ZaloLogin:
     def check_logged_in(self, timeout: int = 12000):
         """
         Kiểm tra đã đăng nhập chưa (dùng khi kiểm tra session cũ)
-        Xác định: URL là chat.zalo.me VÀ avatar user hoặc icon chat hiển thị
+        Xác định: URL thuộc chat host VÀ avatar user hoặc icon chat hiển thị
         """
         try:
-            if "chat.zalo.me" not in self.page.url:
+            if ZALO_CHAT_HOST not in self.page.url:
                 return False
 
             # Chờ shell UI của chat tải xong để tránh false-negative trên mạng chậm

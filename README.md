@@ -75,6 +75,11 @@ Biến quan trọng:
 - `API_HOST` (mặc định `0.0.0.0`)
 - `API_PORT` (mặc định `8000`)
 - `DEBUG` (`true/false`, mặc định `false`)
+- `HPO_BASE_URL` (domain gốc, hệ thống tự nối các suffix như `/login`, `/dashboard`, `/contracts`)
+- `ZALO_CHAT_BASE_URL` (domain chat gốc, mặc định `https://chat.zalo.me`)
+- `ZALO_CHAT_PATH` (hậu tố đường dẫn chat, mặc định `/`)
+- `ZALO_ID_BASE_URL` (domain id gốc, mặc định `https://id.zalo.me`)
+- `ZALO_LOGIN_PATH` (hậu tố đăng nhập, mặc định `/account`)
 
 ### Frontend
 

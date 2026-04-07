@@ -39,7 +39,7 @@ const TASK_LABELS = {
     scrape_details: 'Lấy dữ liệu hợp đồng',
 };
 
-function Tasks({ taskStatus, progress, userStorageKey }) {
+function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSessionStatus }) {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState({ check: false, download: false, scrape: false });
     const [sessionStatus, setSessionStatus] = useState(null);
@@ -179,7 +179,10 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
     };
 
     const isAnyRunning = Object.values(loading).some(Boolean);
-    const isLocked = sessionStatus !== true;
+    const hasSharedSession = typeof sharedSessionStatus?.is_logged_in === 'boolean';
+    const isSessionChecking = hasSharedSession ? Boolean(sharedSessionStatus?.checking) : sessionStatus === null;
+    const resolvedSessionLoggedIn = hasSharedSession ? sharedSessionStatus.is_logged_in : sessionStatus;
+    const isLocked = resolvedSessionLoggedIn !== true;
 
     const handleCheckContracts = async () => {
         if (isLocked) {
@@ -244,7 +247,7 @@ function Tasks({ taskStatus, progress, userStorageKey }) {
     return (
         <div className="tasks-container">
             {/* Session Warning */}
-            {sessionStatus === false && (
+            {!isSessionChecking && resolvedSessionLoggedIn === false && (
                 <Alert
                     message="Chưa đăng nhập HPO — Vui lòng vào Trang Chủ để đăng nhập trước."
                     description="Các chức năng ở trang Tác vụ RPA sẽ bị khóa cho đến khi đăng nhập thành công."

@@ -13,7 +13,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from datetime import datetime
 
-from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS
+from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS, ZALO_LOGIN_URL, ZALO_CHAT_HOST
 from api.websocket.connection_manager import manager, log_to_ws
 from api.routes.config import load_config
 from api.deps.auth import require_roles
@@ -409,7 +409,7 @@ async def run_zalo_login_task(user_id: int):
 
             emit_step("[B4] Điều hướng đến trang đăng nhập Zalo...", "info")
             try:
-                page.goto("https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F", wait_until="domcontentloaded", timeout=30000)
+                page.goto(ZALO_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             except Exception:
                 pass
 
@@ -542,7 +542,7 @@ async def run_zalo_login_task(user_id: int):
 
             def _is_logged_in_now() -> bool:
                 try:
-                    if "chat.zalo.me" not in page.url:
+                    if ZALO_CHAT_HOST not in page.url:
                         return False
                     for selector in login_success_selectors:
                         try:
@@ -571,10 +571,10 @@ async def run_zalo_login_task(user_id: int):
                         emit_step(f"[B6.{elapsed // 10}] Vẫn đang chờ quét QR... ({elapsed}s/{max_wait}s)", "info")
 
                     # Làm mới trang login định kỳ để tránh QR bị treo/expired mà không render lại
-                    if elapsed > 0 and elapsed % 45 == 0 and "chat.zalo.me" not in page.url:
+                    if elapsed > 0 and elapsed % 45 == 0 and ZALO_CHAT_HOST not in page.url:
                         emit_step("[B6.refresh] Làm mới trang login để lấy QR mới do QR cũ có thể hết hạn...", "warning")
                         try:
-                            page.goto("https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F", wait_until="domcontentloaded", timeout=30000)
+                            page.goto(ZALO_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
                             _try_capture_qr()
                         except Exception:
                             pass

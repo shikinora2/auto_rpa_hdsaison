@@ -14,16 +14,16 @@ import json
 import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS
+from config.settings import APP_DATA_DIR, SESSION_CACHE_TTL_SECONDS, HPO_BASE_URL
 
 # Thư mục lưu session RPA theo user
 RPA_SESSION_ROOT_DIR = APP_DATA_DIR / "rpa_sessions"
 
 # URLs
-LOGIN_URL = "https://hpo.hdsaison.com.vn/login"
-DASHBOARD_URL = "https://hpo.hdsaison.com.vn/dashboard"
+LOGIN_URL = f"{HPO_BASE_URL}/login"
+DASHBOARD_URL = f"{HPO_BASE_URL}/dashboard"
 
 # Selectors
 USERNAME_SELECTOR = "[formcontrolname='username']"
@@ -160,6 +160,30 @@ class RPASessionManager:
             except Exception:
                 pass
 
+    def _wait_page_ready(self, page, timeout: int = 20000, probe_networkidle: bool = True):
+        """
+        Chờ trang sẵn sàng theo hướng an toàn:
+        - Bắt buộc DOMContentLoaded
+        - Cố gắng chờ load
+        - networkidle chỉ probe ngắn, không fail toàn flow
+        """
+        page.wait_for_load_state("domcontentloaded", timeout=timeout)
+
+        try:
+            page.wait_for_load_state("load", timeout=min(timeout, 10000))
+        except PlaywrightTimeoutError:
+            pass
+
+        if probe_networkidle:
+            try:
+                page.wait_for_load_state("networkidle", timeout=min(timeout, 3000))
+            except PlaywrightTimeoutError:
+                pass
+
+    def _goto_with_ready(self, page, url: str, timeout: int = 30000):
+        page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+        self._wait_page_ready(page, timeout=min(timeout, 20000), probe_networkidle=False)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Sync methods (chạy trong thread pool, không dùng asyncio)
     # ─────────────────────────────────────────────────────────────────────────
@@ -177,10 +201,11 @@ class RPASessionManager:
                     headless=True,
                     args=['--disable-blink-features=AutomationControlled']
                 )
+                context.set_default_timeout(30000)
+                context.set_default_navigation_timeout(45000)
                 page = context.pages[0] if context.pages else context.new_page()
 
-                page.goto(DASHBOARD_URL, timeout=15000)
-                page.wait_for_load_state('networkidle', timeout=10000)
+                self._goto_with_ready(page, DASHBOARD_URL, timeout=30000)
 
                 current_url = page.url
                 if DASHBOARD_URL in current_url or 'dashboard' in current_url.lower():
@@ -223,6 +248,8 @@ class RPASessionManager:
                     slow_mo=0 if headless else 250,
                     args=['--disable-blink-features=AutomationControlled']
                 )
+                context.set_default_timeout(30000)
+                context.set_default_navigation_timeout(45000)
                 page = context.pages[0] if context.pages else context.new_page()
 
                 # Kiểm tra session cũ còn hợp lệ không
@@ -248,11 +275,12 @@ class RPASessionManager:
                         slow_mo=0 if headless else 250,
                         args=['--disable-blink-features=AutomationControlled']
                     )
+                    context.set_default_timeout(30000)
+                    context.set_default_navigation_timeout(45000)
                     page = context.pages[0] if context.pages else context.new_page()
 
                 try:
-                    page.goto(DASHBOARD_URL, timeout=15000)
-                    page.wait_for_load_state('networkidle', timeout=10000)
+                    self._goto_with_ready(page, DASHBOARD_URL, timeout=30000)
                     current_url = page.url
                     can_reuse_existing_session = (
                         (DASHBOARD_URL in current_url or 'dashboard' in current_url.lower())
@@ -270,8 +298,9 @@ class RPASessionManager:
 
                 # Thực hiện login mới
                 self._log_from_thread(loop, status_callback, "Đang mở trang đăng nhập...")
-                page.goto(LOGIN_URL)
-                page.wait_for_load_state('networkidle', timeout=10000)
+                self._goto_with_ready(page, LOGIN_URL, timeout=30000)
+                page.wait_for_selector(USERNAME_SELECTOR, state="visible", timeout=30000)
+                page.wait_for_selector(PASSWORD_SELECTOR, state="visible", timeout=30000)
 
                 self._log_from_thread(loop, status_callback, "Đang điền thông tin đăng nhập...")
                 page.fill(USERNAME_SELECTOR, username)
@@ -281,7 +310,8 @@ class RPASessionManager:
                 page.click(LOGIN_BUTTON_SELECTOR)
 
                 self._log_from_thread(loop, status_callback, "Đang chờ chuyển đến Dashboard...")
-                page.wait_for_url("**/dashboard**", timeout=30000)
+                page.wait_for_url("**/dashboard**", timeout=45000)
+                self._wait_page_ready(page, timeout=20000, probe_networkidle=False)
 
                 self._log_from_thread(loop, status_callback, "✅ Đăng nhập thành công! Session đã được lưu.")
                 self._set_cache_active(hpo_username=username)

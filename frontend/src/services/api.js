@@ -207,7 +207,8 @@ export const smsAPI = {
     saveConfig: (data) => api.post('/sms/config', data),
     send: (data) => api.post('/sms/send', data),
     health: () => api.get('/sms/health'),
-    getMessages: (limit = 100) => api.get('/sms/messages', { params: { limit } }),
+    getStatus: (id) => api.get(`/sms/status/${id}`),
+    getMessages: (limit = 100, sync = false) => api.get('/sms/messages', { params: { limit, sync } }),
     clearMessages: () => api.delete('/sms/messages'),
 };
 
@@ -215,6 +216,12 @@ export const smsAPI = {
 
 export const healthAPI = {
     check: () => api.get('/health'),
+};
+
+// ============== Admin Cleanup API ==============
+
+export const adminCleanupAPI = {
+    resetRuntime: () => api.post('/admin/cleanup/reset-runtime'),
 };
 
 export { WS_BASE_URL };

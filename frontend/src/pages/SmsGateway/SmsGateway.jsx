@@ -28,11 +28,61 @@ const TEMPLATE_VARIABLES = [
 ];
 
 // ─── Helpers ────────────────────────────────────────────
-const TAG_COLOR = { sent: 'success', failed: 'error', pending: 'processing' };
-const TAG_LABEL = { sent: 'Đã gửi thành công', failed: 'Không gửi được', pending: 'Đang gửi tin nhắn' };
+const TAG_COLOR = { sent: 'success', failed: 'error', pending: 'processing', processed: 'processing', delivered: 'success' };
+const TAG_LABEL = { sent: 'Đã gửi từ ĐT', failed: 'Không gửi được', pending: 'Đang chuyển xuống ĐT', processed: 'ĐT đã nhận', delivered: 'Đã nhận báo cáo' };
+
+const CARRIER_LABELS = {
+  viettel: 'Viettel',
+  mobifone: 'MobiFone',
+  vinaphone: 'VinaPhone',
+  vietnammobile: 'Vietnamobile',
+  other: 'Khác',
+};
+
+const CARRIER_PREFIXES = {
+  viettel: ['086', '096', '097', '098', '032', '033', '034', '035', '036', '037', '038', '039'],
+  mobifone: ['089', '090', '093', '070', '079', '077', '076', '078'],
+  vinaphone: ['088', '091', '094', '081', '082', '083', '084', '085'],
+  vietnammobile: ['092', '056', '058'],
+};
+
+function normalizeVietnamPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (digits.startsWith('84')) {
+    return `0${digits.slice(2)}`;
+  }
+
+  return digits;
+}
+
+function normalizePhoneForSend(phone) {
+  const normalized = normalizeVietnamPhone(phone);
+  if (/^0\d{9}$/.test(normalized)) return normalized;
+  return '';
+}
+
+function getCarrierByPhone(phone) {
+  const normalized = normalizePhoneForSend(phone);
+  if (!normalized) return 'other';
+
+  const prefix3 = normalized.slice(0, 3);
+  const found = Object.entries(CARRIER_PREFIXES).find(([, prefixes]) => prefixes.includes(prefix3));
+  return found?.[0] || 'other';
+}
+
+function toVietnameseHonorific(gender) {
+  const normalized = String(gender || '').trim().toLowerCase();
+  if (!normalized) return 'Anh/Chị';
+  if (normalized.includes('nam')) return 'Anh';
+  if (normalized.includes('nữ') || normalized.includes('nu')) return 'Chị';
+  return 'Anh/Chị';
+}
 
 function StatusBadge({ status }) {
   if (status === 'ok') return <Badge status="success" text="Đã kết nối" />;
+  if (status === 'warn') return <Badge status="warning" text="Thiết bị có thể offline" />;
   if (status === 'error') return <Badge status="error" text="Không kết nối" />;
   return <Badge status="default" text="Chưa kiểm tra" />;
 }
@@ -40,6 +90,7 @@ function StatusBadge({ status }) {
 // ─── Tab 1: Cấu hình ────────────────────────────────────
 function ConfigTab() {
   const [form] = Form.useForm();
+  const deviceIp = Form.useWatch('device_ip', form);
   const [saving, setSaving] = useState(false);
   const [pinging, setPinging] = useState(false);
   const [healthStatus, setHealthStatus] = useState(null); // null | { status, message }
@@ -67,6 +118,14 @@ function ConfigTab() {
       }
     }).catch(() => { });
   }, [form]);
+
+  useEffect(() => {
+    if (!deviceIp) return undefined;
+    const timer = setInterval(() => {
+      checkHealthStatus();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [deviceIp]);
 
   const handleSave = async (values) => {
     setSaving(true);
@@ -103,45 +162,52 @@ function ConfigTab() {
         <span>Cấu hình kết nối Android Gateway</span>
       </div>
 
-      <Alert
-        className="sms-info-alert"
-        type="info"
-        showIcon
-        message="Thông tin thiết bị hoạt động"
-        description={
-          <>
-            <p style={{ margin: 0, marginBottom: 8 }}>
-              Hệ thống hiện tại <b>chỉ hỗ trợ kết nối 1 thiết bị Android làm Gateway duy nhất</b> để đảm bảo tính đồng bộ của lịch sử SMS.
-            </p>
-            {healthStatus && (
-              <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(0,0,0,0.2)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                  <b style={{ marginRight: 8 }}>Trạng thái kết nối Gateway hiện tại:</b>
-                  <StatusBadge status={healthStatus.status} />
-                </div>
-                <Text type={healthStatus.status === 'ok' ? 'success' : 'danger'}>
-                  {healthStatus.message}
-                </Text>
-              </div>
-            )}
-            <Divider style={{ margin: '12px 0' }} />
-            <ol style={{ margin: 0, paddingLeft: 16 }}>
-              <li>Cài app <a href="https://github.com/capcom6/android-sms-gateway/releases" target="_blank" rel="noreferrer">Android SMS Gateway</a> lên điện thoại</li>
-              <li>Bật <b>Local Server</b> trong app → ghi lại IP, port, username, password</li>
-              <li>Đảm bảo máy tính và điện thoại <b>cùng mạng WiFi/LAN</b></li>
-              <li>Nhập thông tin bên dưới → Lưu → Kiểm tra kết nối</li>
-            </ol>
-          </>
-        }
-      />
-
       <Form
         form={form}
         layout="vertical"
         onFinish={handleSave}
-        initialValues={{ device_port: 8080, enabled: false, use_specific_sim: false, sim_number: 1 }}
+        initialValues={{
+          device_port: 8080,
+          enabled: false,
+          use_specific_sim: false,
+          sim_number: 1,
+        }}
         className="sms-config-form"
       >
+        <Form.Item label="Chế độ Kết nối" style={{ marginBottom: 16 }}>
+          <Button type="primary" disabled>Local Server (Chung Wifi/LAN)</Button>
+        </Form.Item>
+
+        {healthStatus && (
+          <Alert
+            type={healthStatus.status === 'ok' ? 'success' : healthStatus.status === 'warn' ? 'warning' : 'error'}
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <StatusBadge status={healthStatus.status} />
+                <span>{healthStatus.message}</span>
+              </div>
+            }
+            description={null}
+          />
+        )}
+
+        <Alert
+          className="sms-info-alert"
+          type="info"
+          showIcon
+          message="Hướng dẫn kết nối Local Server"
+          description={
+            <ol style={{ margin: 0, paddingLeft: 16 }}>
+              <li>Bật <b>Local Server</b> trong app Android SMS Gateway.</li>
+              <li>Đảm bảo máy tính và điện thoại <b>cùng mạng WiFi/LAN</b>.</li>
+              <li>Nhập IP hiển thị, Port, Username, Password vào form bên dưới.</li>
+            </ol>
+          }
+          style={{ marginBottom: 16 }}
+        />
+
         <div className="sms-form-row">
           <Form.Item
             name="device_ip"
@@ -263,12 +329,15 @@ function ConfigTab() {
 // ─── Tab 2: Gửi SMS Hàng loạt ─────────────────────────────────────
 function SendTab({ userStorageKey }) {
   const [customers, setCustomers] = useUserPersistentState(userStorageKey, 'sms.send.customers', []);
+  const [selectedCarrierFilters, setSelectedCarrierFilters] = useState([]);
   const [messageTemplate, setMessageTemplate] = useUserPersistentState(userStorageKey, 'sms.send.messageTemplate', '');
   const [manualPhoneInput, setManualPhoneInput] = useUserPersistentState(userStorageKey, 'sms.send.manualPhoneInput', '');
   const [manualPhones, setManualPhones] = useUserPersistentState(userStorageKey, 'sms.send.manualPhones', []);
   const [charCount, setCharCount] = useState(0);
   const [sendingState, setSendingState] = useState({ isSending: false, total: 0, current: 0 });
   const [isPaused, setIsPaused] = useState(false);
+  const [currentDelayMs, setCurrentDelayMs] = useState(0);
+  const [lastDelayMs, setLastDelayMs] = useState(null);
 
   // Cấu hình nâng cao
   const [delayConfig, setDelayConfig] = useUserPersistentState(userStorageKey, 'sms.send.delayConfig', { min: 1000, max: 3000 });
@@ -282,7 +351,7 @@ function SendTab({ userStorageKey }) {
   // Sync state -> ref
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
-  const updateCustomerSendStatusByPhone = useCallback((phone, code) => {
+  const updateCustomerSendStatusByPhone = useCallback((phone, code, message_id = null) => {
     const normalizedPhone = String(phone || '').trim();
     if (!normalizedPhone) return;
 
@@ -290,11 +359,41 @@ function SendTab({ userStorageKey }) {
       String(customer.phone || '').trim() === normalizedPhone
         ? {
           ...customer,
-          smsStatus: { code },
-          smsError: code === 'failed' ? (customer.smsError || 'Không gửi được') : null,
+          smsStatus: { code, message_id: message_id || customer.smsStatus?.message_id },
+          smsError: code === 'failed' ? (customer.smsError || 'Lỗi gửi tin') : null,
         }
         : customer
     )));
+  }, [setCustomers]);
+
+  // Polling check trang thai pending tu gateway local
+  useEffect(() => {
+    const pollPendingStatuses = () => {
+      setCustomers(prev => {
+        const pendings = prev.filter(c => c.smsStatus?.message_id && ['pending', 'processed'].includes(c.smsStatus?.code));
+        if (pendings.length === 0) return prev;
+
+        pendings.forEach(p => {
+          smsAPI.getStatus(p.smsStatus.message_id).then(res => {
+            const data = res.data;
+            if (data.success && data.state) {
+              const newState = data.state.toLowerCase();
+              if (newState !== p.smsStatus.code) {
+                setCustomers(current => current.map(c =>
+                  c._key === p._key
+                    ? { ...c, smsStatus: { ...c.smsStatus, code: newState }, smsError: data.error || (newState === 'failed' ? 'Lỗi gửi tin' : null) }
+                    : c
+                ));
+              }
+            }
+          }).catch(() => { });
+        });
+        return prev;
+      });
+    };
+
+    const timer = setInterval(pollPendingStatuses, 4000);
+    return () => clearInterval(timer);
   }, [setCustomers]);
 
   const handleUpload = async (info) => {
@@ -343,15 +442,29 @@ function SendTab({ userStorageKey }) {
   };
 
   const handleSendBatch = async () => {
-    const validCustomers = customers.filter(c => String(c.phone || '').trim());
-    const validManualPhones = manualPhones
-      .map(p => String(p || '').trim())
-      .filter(Boolean);
+    const fileRecipients = filteredFileCustomers
+      .map(customer => ({
+        type: 'file',
+        customer,
+        phoneRaw: String(customer?.phone || '').trim(),
+        phoneSend: normalizePhoneForSend(customer?.phone),
+      }))
+      .filter(item => item.phoneSend);
+
+    const manualRecipients = manualPhones
+      .map(phone => ({
+        type: 'manual',
+        phoneRaw: String(phone || '').trim(),
+        phoneSend: normalizePhoneForSend(phone),
+      }))
+      .filter(item => item.phoneSend);
 
     const recipients = [
-      ...validCustomers.map(customer => ({ type: 'file', customer })),
-      ...validManualPhones.map(phone => ({ type: 'manual', phone })),
+      ...fileRecipients,
+      ...manualRecipients,
     ];
+
+    const skippedInvalid = (filteredFileCustomers.length - fileRecipients.length) + (manualPhones.length - manualRecipients.length);
 
     if (recipients.length === 0) {
       message.warning('Không có số điện thoại nào hợp lệ để gửi');
@@ -366,8 +479,14 @@ function SendTab({ userStorageKey }) {
       return;
     }
 
+    if (skippedInvalid > 0) {
+      message.warning(`Bỏ qua ${skippedInvalid} số không hợp lệ. Chỉ gửi các số di động VN hợp lệ.`);
+    }
+
     setSendingState({ isSending: true, total: recipients.length, current: 0 });
     setIsPaused(false);
+    setCurrentDelayMs(0);
+    setLastDelayMs(null);
     isSendingRef.current = true;
     isPausedRef.current = false;
 
@@ -386,7 +505,7 @@ function SendTab({ userStorageKey }) {
       const customer = recipient.type === 'file'
         ? recipient.customer
         : {
-          phone: recipient.phone,
+          phone: recipient.phoneRaw,
           name: '',
           gender: '',
           contract_id: '',
@@ -396,7 +515,7 @@ function SendTab({ userStorageKey }) {
 
       let text = messageTemplate
         .replace(/{name}/g, customer.name || '')
-        .replace(/{gender}/g, customer.gender || '')
+        .replace(/{gender}/g, toVietnameseHonorific(customer.gender))
         .replace(/{phone}/g, customer.phone || '')
         .replace(/{contract_id}/g, customer.contract_id || '')
         .replace(/{cccd}/g, customer.cccd || '')
@@ -421,36 +540,54 @@ function SendTab({ userStorageKey }) {
       if (!isSendingRef.current) break;
 
       const recipient = recipients[i];
-      const phone = recipient.type === 'file' ? recipient.customer.phone : recipient.phone;
+      const phoneRaw = recipient.phoneRaw;
+      const phoneSend = recipient.phoneSend;
       setSendingState(prev => ({ ...prev, current: i + 1 }));
 
       if (recipient.type === 'file') {
-        updateCustomerSendStatusByPhone(phone, 'pending');
+        updateCustomerSendStatusByPhone(phoneRaw, 'pending');
       }
 
       const text = buildMessageByRecipient(recipient);
 
       try {
-        await smsAPI.send({
-          phone_numbers: [phone],
+        const { data } = await smsAPI.send({
+          phone_numbers: [phoneSend],
           message: text,
         });
         successCount++;
 
         if (recipient.type === 'file') {
-          updateCustomerSendStatusByPhone(phone, 'sent');
+          updateCustomerSendStatusByPhone(phoneRaw, 'pending', data?.message_id);
         }
 
         // Nghỉ ngơi giữa 2 lần gửi
         if (i < recipients.length - 1 && isSendingRef.current) {
           const delayTimeout = Math.floor(Math.random() * (delayConfig.max - delayConfig.min + 1)) + delayConfig.min;
-          await new Promise(r => setTimeout(r, delayTimeout));
+          setLastDelayMs(delayTimeout);
+
+          const startAt = Date.now();
+          setCurrentDelayMs(delayTimeout);
+
+          await new Promise((resolve) => {
+            const timer = setInterval(() => {
+              const elapsed = Date.now() - startAt;
+              const remain = Math.max(0, delayTimeout - elapsed);
+              setCurrentDelayMs(remain);
+
+              if (remain <= 0 || !isSendingRef.current) {
+                clearInterval(timer);
+                setCurrentDelayMs(0);
+                resolve();
+              }
+            }, 100);
+          });
         }
       } catch (err) {
-        console.error("Gửi SMS lỗi cho SĐT", phone, err);
+        console.error("Gửi SMS lỗi cho SĐT", phoneRaw, err);
         if (recipient.type === 'file') {
           setCustomers(prev => prev.map(customer => (
-            String(customer.phone || '').trim() === String(phone || '').trim()
+            String(customer.phone || '').trim() === String(phoneRaw || '').trim()
               ? {
                 ...customer,
                 smsStatus: { code: 'failed' },
@@ -466,6 +603,7 @@ function SendTab({ userStorageKey }) {
     isSendingRef.current = false;
     setSendingState(prev => ({ ...prev, isSending: false }));
     setIsPaused(false);
+    setCurrentDelayMs(0);
 
     if (wasCanceled) {
       message.info(`Đã dừng gửi tin. Gửi thành công: ${successCount} tin.`);
@@ -477,6 +615,7 @@ function SendTab({ userStorageKey }) {
   const handleStop = () => {
     isSendingRef.current = false;
     setIsPaused(false);
+    setCurrentDelayMs(0);
   };
 
   const handleAddManualPhone = () => {
@@ -501,6 +640,28 @@ function SendTab({ userStorageKey }) {
     { title: 'STT', key: 'stt', width: 55, render: (_, __, i) => i + 1, align: 'center' },
     { title: 'Số điện thoại', dataIndex: 'phone', key: 'phone', width: 140 },
     { title: 'Tên', dataIndex: 'name', key: 'name' },
+    {
+      title: 'Nhà mạng',
+      key: 'carrier',
+      dataIndex: 'phone',
+      width: 140,
+      filteredValue: selectedCarrierFilters.length ? selectedCarrierFilters : null,
+      filters: [
+        { text: CARRIER_LABELS.viettel, value: 'viettel' },
+        { text: CARRIER_LABELS.mobifone, value: 'mobifone' },
+        { text: CARRIER_LABELS.vinaphone, value: 'vinaphone' },
+        { text: CARRIER_LABELS.vietnammobile, value: 'vietnammobile' },
+      ],
+      onFilter: (value, record) => getCarrierByPhone(record?.phone) === value,
+      render: (phone) => {
+        const carrier = getCarrierByPhone(phone);
+        return (
+          <Tag color={carrier === 'other' ? 'default' : 'blue'}>
+            {CARRIER_LABELS[carrier] || CARRIER_LABELS.other}
+          </Tag>
+        );
+      },
+    },
     { title: 'Mã HĐ', dataIndex: 'contract_id', key: 'contract_id' },
     {
       title: 'Trạng thái gửi',
@@ -534,8 +695,13 @@ function SendTab({ userStorageKey }) {
     },
   ];
 
-  const validFileCustomersCount = customers.filter(c => String(c.phone || '').trim()).length;
-  const validManualPhonesCount = manualPhones.filter(p => String(p || '').trim()).length;
+  const filteredFileCustomers = customers.filter((customer) => {
+    if (!selectedCarrierFilters.length) return true;
+    return selectedCarrierFilters.includes(getCarrierByPhone(customer?.phone));
+  });
+
+  const validFileCustomersCount = filteredFileCustomers.filter(c => normalizePhoneForSend(c?.phone)).length;
+  const validManualPhonesCount = manualPhones.filter(p => normalizePhoneForSend(p)).length;
   const totalRecipientsCount = validFileCustomersCount + validManualPhonesCount;
 
   return (
@@ -548,7 +714,7 @@ function SendTab({ userStorageKey }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <b style={{ lineHeight: '32px' }}>
-          Danh sách nhận tin {customers.length > 0 && `(${customers.length} khách)`}
+          Danh sách nhận tin {customers.length > 0 && `(${filteredFileCustomers.length}/${customers.length} khách)`}
         </b>
         <Space>
           <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate} size="small">
@@ -566,6 +732,12 @@ function SendTab({ userStorageKey }) {
         columns={customerColumns}
         dataSource={customers}
         rowKey={(r) => r._key}
+        onChange={(_, filters) => {
+          const carrierValues = Array.isArray(filters?.carrier)
+            ? filters.carrier.filter(Boolean)
+            : [];
+          setSelectedCarrierFilters(carrierValues);
+        }}
         size="small"
         scroll={{ y: 250 }}
         pagination={false}
@@ -708,6 +880,14 @@ function SendTab({ userStorageKey }) {
                 </Button>
               </Space>
             </div>
+            {!isPaused && currentDelayMs > 0 && (
+              <div style={{ marginBottom: 8, color: '#94a3b8', fontSize: 12 }}>
+                Đang chờ ngẫu nhiên giữa 2 lần gửi: <b>{Math.ceil(currentDelayMs)}</b> ms
+                {typeof lastDelayMs === 'number' && (
+                  <span> (đã random: {lastDelayMs} ms)</span>
+                )}
+              </div>
+            )}
             <Progress
               percent={Math.round((sendingState.current / sendingState.total) * 100)}
               status={isPaused ? "normal" : "active"}
@@ -734,16 +914,22 @@ function SendTab({ userStorageKey }) {
 function HistoryTab() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (sync = false) => {
+    if (sync) setSyncing(true);
     setLoading(true);
     try {
-      const { data } = await smsAPI.getMessages(200);
+      const { data } = await smsAPI.getMessages(200, sync);
       setMessages(data.messages || []);
+      if (sync && data.sync) {
+        message.success(`Đã đồng bộ ${data.sync.synced}/${data.sync.checked} tin cần cập nhật`);
+      }
     } catch {
       message.error('Không thể tải lịch sử tin nhắn');
     } finally {
+      if (sync) setSyncing(false);
       setLoading(false);
     }
   }, []);
@@ -768,7 +954,7 @@ function HistoryTab() {
       title: 'Thời gian',
       dataIndex: 'sent_at',
       key: 'sent_at',
-      width: 160,
+      width: 155,
       render: (val) => {
         if (!val) return '—';
         const d = new Date(val);
@@ -776,9 +962,22 @@ function HistoryTab() {
       },
     },
     {
+      title: 'Message ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 185,
+      ellipsis: { showTitle: false },
+      render: (id) => id ? (
+        <Tooltip title={id}>
+          <span className="sms-history-code-cell">{id}</span>
+        </Tooltip>
+      ) : '—',
+    },
+    {
       title: 'Số điện thoại',
       dataIndex: 'phones',
       key: 'phones',
+      width: 150,
       render: (phones) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {(phones || []).map((p) => (
@@ -791,6 +990,7 @@ function HistoryTab() {
       title: 'Nội dung',
       dataIndex: 'message',
       key: 'message',
+      width: 250,
       ellipsis: { showTitle: false },
       render: (text) => (
         <Tooltip title={text}>
@@ -802,7 +1002,7 @@ function HistoryTab() {
       title: 'Trạng thái',
       dataIndex: 'status',
       key: 'status',
-      width: 110,
+      width: 140,
       align: 'center',
       render: (status) => (
         <Tag color={TAG_COLOR[status] || 'default'}>
@@ -811,10 +1011,30 @@ function HistoryTab() {
       ),
     },
     {
+      title: 'Device ID',
+      dataIndex: 'device_id',
+      key: 'device_id',
+      width: 200,
+      responsive: ['xl'],
+      ellipsis: { showTitle: false },
+      render: (id) => id ? (
+        <Tooltip title={id}>
+          <span className="sms-history-code-cell">{id}</span>
+        </Tooltip>
+      ) : '—',
+    },
+    {
       title: 'Lỗi',
       dataIndex: 'error',
       key: 'error',
-      render: (err) => err ? <Text type="danger" style={{ fontSize: 12 }}>{err}</Text> : '—',
+      width: 220,
+      responsive: ['xxl'],
+      ellipsis: { showTitle: false },
+      render: (err) => err ? (
+        <Tooltip title={err}>
+          <Text type="danger" ellipsis style={{ fontSize: 12, display: 'block' }}>{err}</Text>
+        </Tooltip>
+      ) : '—',
     },
   ];
 
@@ -827,10 +1047,18 @@ function HistoryTab() {
           <Button
             size="small"
             icon={<ReloadOutlined />}
-            onClick={loadHistory}
+            onClick={() => loadHistory(false)}
             loading={loading}
           >
             Làm mới
+          </Button>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={() => loadHistory(true)}
+            loading={syncing}
+          >
+            Đồng bộ trạng thái
           </Button>
           {messages.length > 0 && (
             <Popconfirm
@@ -853,7 +1081,7 @@ function HistoryTab() {
         <Text type="secondary">Tổng: <b>{messages.length}</b> tin nhắn</Text>
         <Text type="secondary" style={{ marginLeft: 16 }}>
           Thành công: <b style={{ color: '#52c41a' }}>
-            {messages.filter(m => m.status === 'sent').length}
+            {messages.filter(m => ['sent', 'delivered'].includes(String(m.status || '').toLowerCase())).length}
           </b>
         </Text>
         <Text type="secondary" style={{ marginLeft: 16 }}>
@@ -869,10 +1097,11 @@ function HistoryTab() {
         rowKey={(r) => r.id + r.sent_at}
         loading={loading}
         size="small"
+        tableLayout="fixed"
         className="sms-history-table"
         pagination={{ pageSize: 20, showSizeChanger: false }}
         locale={{ emptyText: 'Chưa có tin nhắn nào được gửi' }}
-        scroll={{ x: 700 }}
+        scroll={{ x: 1080 }}
       />
     </div>
   );
@@ -920,7 +1149,7 @@ export default function SmsGateway({ userStorageKey }) {
           <div>
             <h2 className="sms-gateway-title">SMS Gateway</h2>
             <p className="sms-gateway-subtitle">
-              Gửi SMS qua điện thoại Android (Local Network)
+              Gửi/nhận SMS qua Android (Local Server)
             </p>
           </div>
         </div>

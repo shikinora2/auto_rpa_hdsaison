@@ -1,10 +1,11 @@
 import os
 import time
 import random
-from playwright.sync_api import sync_playwright 
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import base64 
 import json
 import re # Thêm thư viện Regex
+from config.settings import HPO_BASE_URL
 
 # Thêm thư viện để xuất Excel
 try:
@@ -16,10 +17,10 @@ except ImportError:
     pass
 
 # --- CẤU HÌNH TRANG WEB ---
-LOGIN_URL = "https://hpo.hdsaison.com.vn/login"
-DASHBOARD_URL = "https://hpo.hdsaison.com.vn/dashboard"
-CONTRACT_DETAIL_URL_BASE = "https://hpo.hdsaison.com.vn/contracts" 
-CONTRACTS_URL_TEMPLATE = "https://hpo.hdsaison.com.vn/contracts#keyword=&startDate={START_DATE_HERE}&endDate={END_DATE_HERE}&filter=APPROVED_HARD_COPY_STATUS"
+LOGIN_URL = f"{HPO_BASE_URL}/login"
+DASHBOARD_URL = f"{HPO_BASE_URL}/dashboard"
+CONTRACT_DETAIL_URL_BASE = f"{HPO_BASE_URL}/contracts"
+CONTRACTS_URL_TEMPLATE = f"{HPO_BASE_URL}/contracts#keyword=&startDate={{START_DATE_HERE}}&endDate={{END_DATE_HERE}}&filter=APPROVED_HARD_COPY_STATUS"
 
 # --- CÁC SELECTOR (BỘ CHỌN) ---
 # Trang danh sách
@@ -154,6 +155,32 @@ def _get_text(page, selector: str, timeout: int = 3000) -> str | None: # Sửa: 
     except Exception:
         # Trả về None nếu element không tìm thấy
         return None
+
+
+def _wait_page_ready(page, timeout: int = 20000, probe_networkidle: bool = False):
+    """Chờ trang ở mức đủ dùng, tránh phụ thuộc networkidle kéo dài."""
+    page.wait_for_load_state("domcontentloaded", timeout=timeout)
+    try:
+        page.wait_for_load_state("load", timeout=min(timeout, 10000))
+    except PlaywrightTimeoutError:
+        pass
+
+    if probe_networkidle:
+        try:
+            page.wait_for_load_state("networkidle", timeout=min(timeout, 3000))
+        except PlaywrightTimeoutError:
+            pass
+
+
+def _wait_contract_cards_growth(page, previous_count: int, timeout_ms: int = 12000) -> int:
+    """Chờ số lượng card hợp đồng tăng sau khi bấm 'Xem thêm'"""
+    end_time = time.time() + (timeout_ms / 1000)
+    while time.time() < end_time:
+        current_count = len(page.query_selector_all(CONTRACT_CARD_SELECTOR))
+        if current_count > previous_count:
+            return current_count
+        page.wait_for_timeout(400)
+    return len(page.query_selector_all(CONTRACT_CARD_SELECTOR))
 
 # === HÀM HELPER MỚI: XUẤT EXCEL (CHO DỮ LIỆU CÀO) ===
 def _export_details_to_excel(data_list: list, save_directory: str, start_date_ddmmyyyy: str, end_date_ddmmyyyy: str):
@@ -315,14 +342,18 @@ def _perform_login_and_scrape_ids(
 
         # === TIẾN TRÌNH 1: LOGIN ===
         callback(f"Tiến trình 1: Đang mở trang đăng nhập: {LOGIN_URL}")
-        page.goto(LOGIN_URL)
+        page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=45000)
+        _wait_page_ready(page, timeout=20000, probe_networkidle=False)
+        page.wait_for_selector(USERNAME_SELECTOR, state="visible", timeout=30000)
+        page.wait_for_selector(PASSWORD_SELECTOR, state="visible", timeout=30000)
         callback("Đang điền thông tin đăng nhập...")
         page.fill(USERNAME_SELECTOR, username)
         page.fill(PASSWORD_SELECTOR, password)
         page.click(LOGIN_BUTTON_SELECTOR)
         
         callback(f"\nTiến trình 2: Đang chờ trang Dashboard...")
-        page.wait_for_url(DASHBOARD_URL, timeout=30000) 
+        page.wait_for_url("**/dashboard**", timeout=45000)
+        _wait_page_ready(page, timeout=15000, probe_networkidle=False)
         callback("✔ Đăng nhập thành công! Đã vào Dashboard.")
         
         # === GIAI ĐOẠN 1: THU THẬP DANH SÁCH ID HỢP ĐỒNG ===
@@ -334,17 +365,19 @@ def _perform_login_and_scrape_ids(
         # ===============================
         
         callback(f"\nĐang điều hướng đến URL đã lọc theo ngày...")
-        page.goto(dynamic_filtered_url)
-        page.wait_for_url(dynamic_filtered_url, timeout=30000)
+        page.goto(dynamic_filtered_url, wait_until="domcontentloaded", timeout=45000)
+        _wait_page_ready(page, timeout=15000, probe_networkidle=False)
         
         callback(f"\nĐang ép F5 (Tải lại) trang để áp dụng bộ lọc...")
-        page.reload()
+        page.reload(wait_until="domcontentloaded", timeout=45000)
+        _wait_page_ready(page, timeout=15000, probe_networkidle=False)
         
         callback(f"   Đang chờ DỮ LIỆU ĐỢT ĐẦU tải...")
         page.wait_for_selector(CONTRACT_CARDS_CONTAINER_SELECTOR, timeout=30000)
         callback("✔ Khu vực dữ liệu ('div.cards') đã tải.")
         
         callback(f"\nBắt đầu tìm và nhấn nút 'Xem thêm...'")
+        stagnant_rounds = 0
         
         while page.is_visible(SEE_MORE_BUTTON_SELECTOR):
             if stop_event.is_set():
@@ -353,9 +386,19 @@ def _perform_login_and_scrape_ids(
             pause_event.wait() 
 
             try:
+                previous_count = len(page.query_selector_all(CONTRACT_CARD_SELECTOR))
                 callback("   Đang nhấn 'Xem thêm...' để tải thêm hợp đồng...")
                 page.click(SEE_MORE_BUTTON_SELECTOR)
-                page.wait_for_load_state('networkidle', timeout=15000) 
+                current_count = _wait_contract_cards_growth(page, previous_count, timeout_ms=12000)
+
+                if current_count <= previous_count:
+                    stagnant_rounds += 1
+                    callback("   Không thấy hợp đồng mới sau khi tải thêm, thử lại...")
+                    if stagnant_rounds >= 2:
+                        callback("   Dữ liệu không tăng thêm, dừng vòng 'Xem thêm'.")
+                        break
+                else:
+                    stagnant_rounds = 0
             except Exception as e:
                 callback(f"   Lỗi khi click 'Xem thêm' (có thể nút đã biến mất): {e}")
                 break 

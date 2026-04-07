@@ -3,6 +3,7 @@ Backend Configuration Settings
 """
 import os
 from pathlib import Path
+from urllib.parse import quote, urlparse
 
 # Load .env nếu có (dùng trên VPS để set biến môi trường dễ hơn)
 _env_file = Path(__file__).resolve().parent.parent / ".env"
@@ -74,6 +75,24 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
 CLEAR_SESSION_ON_STARTUP = os.getenv("CLEAR_SESSION_ON_STARTUP", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+# External app base URLs (domain + suffix pattern)
+HPO_BASE_URL = os.getenv("HPO_BASE_URL", "https://hpo.hdsaison.com.vn").strip().rstrip("/")
+
+ZALO_CHAT_BASE_URL = os.getenv("ZALO_CHAT_BASE_URL", "https://chat.zalo.me").strip().rstrip("/")
+ZALO_CHAT_PATH = os.getenv("ZALO_CHAT_PATH", "/").strip() or "/"
+if not ZALO_CHAT_PATH.startswith("/"):
+    ZALO_CHAT_PATH = f"/{ZALO_CHAT_PATH}"
+
+ZALO_ID_BASE_URL = os.getenv("ZALO_ID_BASE_URL", "https://id.zalo.me").strip().rstrip("/")
+ZALO_LOGIN_PATH = os.getenv("ZALO_LOGIN_PATH", "/account").strip() or "/account"
+if not ZALO_LOGIN_PATH.startswith("/"):
+    ZALO_LOGIN_PATH = f"/{ZALO_LOGIN_PATH}"
+
+ZALO_CHAT_URL = f"{ZALO_CHAT_BASE_URL}{ZALO_CHAT_PATH}"
+ZALO_LOGIN_URL = f"{ZALO_ID_BASE_URL}{ZALO_LOGIN_PATH}?continue={quote(ZALO_CHAT_URL, safe='')}"
+ZALO_CHAT_HOST = urlparse(ZALO_CHAT_URL).netloc
+ZALO_ID_HOST = urlparse(ZALO_ID_BASE_URL).netloc
 
 # CORS settings
 # Thêm origins bổ sung qua env var ALLOWED_ORIGINS (phân cách bằng dấu phẩy)
