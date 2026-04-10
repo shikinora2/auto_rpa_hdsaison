@@ -2,7 +2,7 @@
 Files API Routes
 API endpoints cho upload/download files
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import List
 import os
@@ -18,7 +18,7 @@ from uuid import uuid4
 from config.settings import DOWNLOADS_DIR, APP_DATA_DIR, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE
 from api.deps.auth import require_roles
 
-router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user", "hdsaison"))])
 
 # Thư mục temp cho upload
 UPLOAD_DIR = APP_DATA_DIR / "uploads"
@@ -300,15 +300,18 @@ async def parse_excel_endpoint(file: UploadFile = File(...)):
 
 
 @router.get("/template")
-async def download_template():
+async def download_template(mode: str = Query(default="minimal", pattern="^(minimal|full)$")):
     """
-    Tạo và tải về file Excel mẫu cùng định dạng với tab RPA (scrape details).
+    Tạo và tải về file Excel mẫu cho tab Zalo/SMS.
+    - minimal: chỉ gồm các cột bắt buộc (STT, Họ tên, SĐT)
+    - full: gồm đầy đủ cột thông tin mở rộng
     """
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill
     from openpyxl.utils import get_column_letter
 
-    headers = [
+    minimal_headers = ['STT', 'Họ tên', 'SĐT']
+    full_headers = [
         'STT', 'ID Hợp đồng', 'Tên KH (Profile)', 'Giới tính', 'Ngày sinh', 'Số CCCD',
         'Ngày cấp', 'Ngày hết hạn', 'SĐT (Chính)', 'Tình trạng hôn nhân', 'Học vấn',
         'Nghề nghiệp', 'Tên công ty', 'Địa chỉ công ty', 'Thu nhập',
@@ -320,10 +323,11 @@ async def download_template():
         'Sản phẩm (Gộp)', 'Tổng tiền', 'Trả trước', 'Số tiền vay',
         'Góp mỗi tháng', 'Số tháng', 'Lãi suất', 'Bảo hiểm', 'Bonus Scheme',
     ]
+    headers = full_headers if mode == "full" else minimal_headers
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Chi tiết Hợp đồng"
+    ws.title = "Danh sách khách hàng"
 
     ws.append(headers)
 
@@ -354,6 +358,10 @@ async def download_template():
         stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": "attachment; filename*=UTF-8''mau_danh_sach_khach_hang.xlsx"
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''mau_danh_sach_khach_hang_day_du.xlsx"
+                if mode == "full"
+                else "attachment; filename*=UTF-8''mau_danh_sach_khach_hang_toi_gian.xlsx"
+            )
         },
     )

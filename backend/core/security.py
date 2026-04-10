@@ -56,4 +56,5 @@ def sha256_text(value: str) -> str:
 
 
 def sanitize_role(role: Optional[str]) -> str:
-    return role if role in {"admin", "user"} else "user"
+    normalized = str(role or "").strip().lower()
+    return normalized or "user"

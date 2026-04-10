@@ -38,7 +38,7 @@ const TASK_LABELS = {
     add_friends: 'Kết bạn Zalo',
 };
 
-function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySession, onSessionUpdate, rpaStatus, qrImage }) {
+function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySession, onSessionUpdate, rpaStatus, qrImage, canAccessRpa = false, canAccessZalo = false }) {
     const [form] = Form.useForm();
     const [loggingIn, setLoggingIn] = useState(false);
 
@@ -50,6 +50,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     const zaloLoginRequestedRef = useRef(false);
 
     const loadConfig = useCallback(async () => {
+        if (!canAccessRpa) return;
         try {
             const { data } = await configAPI.get();
             form.setFieldsValue({
@@ -59,7 +60,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
         } catch (error) {
             console.error('Failed to load config:', error);
         }
-    }, [form]);
+    }, [form, canAccessRpa]);
 
     const stopSessionPolling = useCallback(() => {
         if (pollRef.current) {
@@ -108,6 +109,12 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     }, [stopSessionPolling, syncQrFromCache]);
 
     const loadZaloSession = useCallback(async () => {
+        if (!canAccessZalo) {
+            setZaloSession({ is_active: false });
+            setLocalQrBase64(null);
+            setZaloLoading(false);
+            return;
+        }
         try {
             const { data } = await zaloAPI.getSession();
             setZaloSession(data);
@@ -125,11 +132,13 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
         } catch (error) {
             console.error('Failed to load Zalo session:', error);
         }
-    }, [startSessionPolling, syncQrFromCache]);
+    }, [startSessionPolling, syncQrFromCache, canAccessZalo]);
 
     useEffect(() => {
-        loadConfig();
-    }, [loadConfig]);
+        if (canAccessRpa) {
+            loadConfig();
+        }
+    }, [loadConfig, canAccessRpa]);
 
     useEffect(() => {
         if (!taskStatus) return;
@@ -169,6 +178,10 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     }, [taskStatus, loadZaloSession, stopSessionPolling]);
 
     const handleLoginAndSave = async () => {
+        if (!canAccessRpa) {
+            message.warning('Bạn không có quyền sử dụng chức năng HPO/RPA.');
+            return;
+        }
         try {
             const values = await form.validateFields();
             if (!values.password) {
@@ -195,6 +208,10 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     };
 
     const handleLogout = async () => {
+        if (!canAccessRpa) {
+            message.warning('Bạn không có quyền sử dụng chức năng HPO/RPA.');
+            return;
+        }
         try {
             await rpaAPI.logout();
             onSessionUpdate({ is_logged_in: false, checking: false });
@@ -205,6 +222,10 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     };
 
     const handleZaloLogin = async () => {
+        if (!canAccessZalo) {
+            message.warning('Bạn không có quyền sử dụng chức năng Zalo.');
+            return;
+        }
         stopSessionPolling();
         setLocalQrBase64(null);
         setZaloLoading(true);
@@ -229,6 +250,10 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     };
 
     const handleZaloLogout = async () => {
+        if (!canAccessZalo) {
+            message.warning('Bạn không có quyền sử dụng chức năng Zalo.');
+            return;
+        }
         try {
             stopSessionPolling();
             await zaloAPI.logout();
@@ -240,9 +265,11 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     };
 
     useEffect(() => {
-        loadZaloSession();
+        if (canAccessZalo) {
+            loadZaloSession();
+        }
         return () => stopSessionPolling();
-    }, [loadZaloSession, stopSessionPolling]);
+    }, [loadZaloSession, stopSessionPolling, canAccessZalo]);
 
     // Sync WebSocket-pushed QR to local state
     useEffect(() => {
@@ -252,6 +279,19 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
     }, [qrImage]);
 
     const currentTaskName = TASK_LABELS[taskStatus?.data?.task] || null;
+
+    if (!canAccessRpa && !canAccessZalo) {
+        return (
+            <div className="dashboard-container">
+                <Alert
+                    type="info"
+                    showIcon
+                    message="Tài khoản hiện tại không có quyền truy cập chức năng tại Dashboard"
+                    description="Vui lòng liên hệ quản trị viên để được cấp quyền phù hợp."
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="dashboard-container">
@@ -278,77 +318,79 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
             )}
 
             <Row gutter={[24, 24]}>
-                {/* Login Form */}
-                <Col xs={24} lg={12}>
-                    <Card
-                        title="Cấu hình đăng nhập HPO"
-                        className="config-card"
-                        extra={
-                            <Tooltip title="Kiểm tra lại phiên">
-                                <Button
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    onClick={onVerifySession}
-                                    loading={sessionStatus.checking}
-                                />
-                            </Tooltip>
-                        }
-                    >
-                        <Form form={form} layout="vertical" initialValues={{ headless: false }}>
-                            <div className="login-fields-row">
-                                <Form.Item
-                                    name="username"
-                                    label="Tên đăng nhập"
-                                    rules={[{ required: true, message: 'Nhập tên đăng nhập' }]}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                >
-                                    <Input prefix={<UserOutlined />} placeholder="Nhập username HPO" className="login-input" />
-                                </Form.Item>
-                                <Form.Item
-                                    name="password"
-                                    label="Mật khẩu"
-                                    rules={[{ required: true, message: 'Nhập mật khẩu' }]}
-                                    style={{ flex: 1, marginBottom: 0 }}
-                                >
-                                    <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" className="login-input" />
-                                </Form.Item>
-                            </div>
-
-                            <div className="hpo-actions-row">
-                                <Button
-                                    type="primary"
-                                    icon={<LoginOutlined />}
-                                    onClick={handleLoginAndSave}
-                                    loading={loggingIn}
-                                    size="large"
-                                    block
-                                    className="login-btn hpo-action-btn"
-                                >
-                                    {loggingIn ? 'Đang đăng nhập...' : 'Đăng nhập HPO'}
-                                </Button>
-                                <Button
-                                    danger
-                                    onClick={handleLogout}
-                                    block
-                                    size="large"
-                                    icon={<LogoutOutlined />}
-                                    className="hpo-action-btn"
-                                >
-                                    Xóa phiên
-                                </Button>
-                            </div>
-
-                            {sessionStatus?.is_logged_in && !sessionStatus?.checking && (
-                                <div className="hpo-login-success-msg" role="status" aria-live="polite">
-                                    ✅ Đăng nhập HPO thành công. Bạn có thể sử dụng các chức năng ở trang Tác vụ RPA.
+                {canAccessRpa && (
+                    <Col xs={24} lg={12}>
+                        <Card
+                            title="Cấu hình đăng nhập HPO"
+                            className="config-card"
+                            extra={
+                                <Tooltip title="Kiểm tra lại phiên">
+                                    <Button
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        onClick={onVerifySession}
+                                        loading={sessionStatus.checking}
+                                    />
+                                </Tooltip>
+                            }
+                        >
+                            <Form form={form} layout="vertical" initialValues={{ headless: false }}>
+                                <div className="login-fields-row">
+                                    <Form.Item
+                                        name="username"
+                                        label="Tên đăng nhập"
+                                        rules={[{ required: true, message: 'Nhập tên đăng nhập' }]}
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    >
+                                        <Input prefix={<UserOutlined />} placeholder="Nhập username HPO" className="login-input" />
+                                    </Form.Item>
+                                    <Form.Item
+                                        name="password"
+                                        label="Mật khẩu"
+                                        rules={[{ required: true, message: 'Nhập mật khẩu' }]}
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    >
+                                        <Input.Password prefix={<LockOutlined />} placeholder="Nhập mật khẩu" className="login-input" />
+                                    </Form.Item>
                                 </div>
-                            )}
-                        </Form>
-                    </Card>
-                </Col>
+
+                                <div className="hpo-actions-row">
+                                    <Button
+                                        type="primary"
+                                        icon={<LoginOutlined />}
+                                        onClick={handleLoginAndSave}
+                                        loading={loggingIn}
+                                        size="large"
+                                        block
+                                        className="login-btn hpo-action-btn"
+                                    >
+                                        {loggingIn ? 'Đang đăng nhập...' : 'Đăng nhập HPO'}
+                                    </Button>
+                                    <Button
+                                        danger
+                                        onClick={handleLogout}
+                                        block
+                                        size="large"
+                                        icon={<LogoutOutlined />}
+                                        className="hpo-action-btn"
+                                    >
+                                        Xóa phiên
+                                    </Button>
+                                </div>
+
+                                {sessionStatus?.is_logged_in && !sessionStatus?.checking && (
+                                    <div className="hpo-login-success-msg" role="status" aria-live="polite">
+                                        ✅ Đăng nhập HPO thành công. Bạn có thể sử dụng các chức năng ở trang Tác vụ RPA.
+                                    </div>
+                                )}
+                            </Form>
+                        </Card>
+                    </Col>
+                )}
 
                 {/* Zalo Account Management */}
-                <Col xs={24} lg={12}>
+                {canAccessZalo && (
+                <Col xs={24} lg={canAccessRpa ? 12 : 24}>
                     <Card
                         title="Quản lý tài khoản Zalo"
                         className="account-card"
@@ -413,6 +455,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
                         </div>
                     </Card>
                 </Col>
+                )}
             </Row>
 
 

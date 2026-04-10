@@ -9,7 +9,6 @@ import {
     message,
     Row,
     Col,
-    Alert,
     Progress,
     Tag,
     Tooltip,
@@ -18,7 +17,6 @@ import {
     SearchOutlined,
     DownloadOutlined,
     FileExcelOutlined,
-    WarningOutlined,
     InfoCircleOutlined,
 } from '@ant-design/icons';
 import { configAPI, rpaAPI, filesAPI } from '../../services/api';
@@ -39,10 +37,9 @@ const TASK_LABELS = {
     scrape_details: 'Lấy dữ liệu hợp đồng',
 };
 
-function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSessionStatus }) {
+function Tasks({ taskStatus, progress, userStorageKey }) {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState({ check: false, download: false, scrape: false });
-    const [sessionStatus, setSessionStatus] = useState(null);
     const [currentTask, setCurrentTask] = useState(null);
     const [completedProgress, setCompletedProgress] = useState(null);
     const downloadedArtifactsRef = useRef(new Set());
@@ -52,17 +49,6 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
         end_date: '',
         save_format: 'PDF',
     });
-
-    const checkSession = useCallback(async () => {
-        // Fast path: trả về trạng thái cache, không mở browser (dùng khi trang load)
-        try {
-            const { data } = await rpaAPI.checkSession();
-            setSessionStatus(data.is_logged_in);
-        } catch (error) {
-            console.debug('Failed to check session:', error);
-            setSessionStatus(false);
-        }
-    }, []);
 
     const loadConfig = useCallback(async () => {
         try {
@@ -96,8 +82,7 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
 
     useEffect(() => {
         loadConfig();
-        checkSession();
-    }, [loadConfig, checkSession]);
+    }, [loadConfig]);
 
     useEffect(() => {
         if (restoredFormRef.current) return;
@@ -179,16 +164,8 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
     };
 
     const isAnyRunning = Object.values(loading).some(Boolean);
-    const hasSharedSession = typeof sharedSessionStatus?.is_logged_in === 'boolean';
-    const isSessionChecking = hasSharedSession ? Boolean(sharedSessionStatus?.checking) : sessionStatus === null;
-    const resolvedSessionLoggedIn = hasSharedSession ? sharedSessionStatus.is_logged_in : sessionStatus;
-    const isLocked = resolvedSessionLoggedIn !== true;
 
     const handleCheckContracts = async () => {
-        if (isLocked) {
-            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
-            return;
-        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
@@ -205,10 +182,6 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
     };
 
     const handleDownloadFiles = async () => {
-        if (isLocked) {
-            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
-            return;
-        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
@@ -225,10 +198,6 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
     };
 
     const handleScrapeDetails = async () => {
-        if (isLocked) {
-            message.warning('Trang tác vụ đang bị khóa. Vui lòng đăng nhập HPO ở Trang Chủ trước.');
-            return;
-        }
         const data = getFormData();
         if (!data.start_date || !data.end_date) {
             message.warning('Vui lòng chọn khoảng thời gian');
@@ -246,18 +215,6 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
 
     return (
         <div className="tasks-container">
-            {/* Session Warning */}
-            {!isSessionChecking && resolvedSessionLoggedIn === false && (
-                <Alert
-                    message="Chưa đăng nhập HPO — Vui lòng vào Trang Chủ để đăng nhập trước."
-                    description="Các chức năng ở trang Tác vụ RPA sẽ bị khóa cho đến khi đăng nhập thành công."
-                    type="warning"
-                    showIcon
-                    icon={<WarningOutlined />}
-                    style={{ marginBottom: 16 }}
-                />
-            )}
-
             {/* Running/Completed Progress Banner */}
             {(currentTask || completedProgress) && (
                 <div className="task-running-banner">
@@ -306,7 +263,6 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
                     form={form}
                     layout="vertical"
                     initialValues={{ save_format: 'PDF' }}
-                    disabled={isLocked}
                     onValuesChange={(_, allValues) => {
                         const range = allValues.date_range || [];
                         setPersistedTaskForm({
@@ -369,7 +325,7 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
                                     icon={loading.check ? null : <SearchOutlined />}
                                     onClick={handleCheckContracts}
                                     loading={loading.check}
-                                    disabled={isLocked || (isAnyRunning && !loading.check)}
+                                    disabled={isAnyRunning && !loading.check}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--blue"
@@ -394,7 +350,7 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
                                     icon={loading.download ? null : <DownloadOutlined />}
                                     onClick={handleDownloadFiles}
                                     loading={loading.download}
-                                    disabled={isLocked || (isAnyRunning && !loading.download)}
+                                    disabled={isAnyRunning && !loading.download}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--green"
@@ -419,7 +375,7 @@ function Tasks({ taskStatus, progress, userStorageKey, sessionStatus: sharedSess
                                     icon={loading.scrape ? null : <FileExcelOutlined />}
                                     onClick={handleScrapeDetails}
                                     loading={loading.scrape}
-                                    disabled={isLocked || (isAnyRunning && !loading.scrape)}
+                                    disabled={isAnyRunning && !loading.scrape}
                                     block
                                     size="large"
                                     className="task-action-btn task-action-btn--excel"

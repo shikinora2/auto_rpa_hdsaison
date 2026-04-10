@@ -150,7 +150,11 @@ class AdminUpdateUserRequest(BaseModel):
 
 def _ensure_default_roles(db: Session):
     role_names = {r.name for r in db.query(Role).all()}
-    for role_name, desc in (("admin", "Administrator"), ("user", "Normal user")):
+    for role_name, desc in (
+        ("admin", "Administrator"),
+        ("user", "Normal user"),
+        ("hdsaison", "HDSaison operator"),
+    ):
         if role_name not in role_names:
             db.add(Role(name=role_name, description=desc))
     db.commit()

@@ -482,9 +482,9 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
             const { data } = await filesAPI.parseExcel(file);
             const rows = (data.data || []).map((row, i) => ({ ...row, _key: i, taskStatus: null }));
             setCustomers(rows);
-            const missing = rows.filter(r => !r.phone && !r.name && !r.contract_id);
+            const missing = rows.filter(r => !r.phone && !r.name);
             if (missing.length === rows.length && rows.length > 0) {
-                message.warning(`Đã tải ${data.row_count} dòng nhưng không tìm thấy cột SĐT/Tên/Mã HĐ. Kiểm tra lại định dạng file.`);
+                message.warning(`Đã tải ${data.row_count} dòng nhưng không tìm thấy cột SĐT/Họ tên. Kiểm tra lại định dạng file.`);
             } else {
                 message.success(`Đã tải ${data.row_count} khách hàng`);
             }
@@ -501,12 +501,12 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         setCustomers(prev => prev.filter(r => r._key !== key));
     };
 
-    const handleDownloadTemplate = () => {
+    const handleDownloadTemplate = (mode = 'minimal') => {
         if (isLocked) {
             message.warning('Trang Auto Zalo đang bị khóa. Vui lòng đăng nhập Zalo ở Trang Chủ trước.');
             return;
         }
-        window.open(filesAPI.templateUrl(), '_blank');
+        window.open(filesAPI.templateUrl(mode), '_blank');
     };
 
     const handleUploadAttachment = async (info) => {
@@ -769,11 +769,19 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <Button
                                     icon={<DownloadOutlined />}
-                                    onClick={handleDownloadTemplate}
+                                    onClick={() => handleDownloadTemplate('minimal')}
                                     className="template-btn"
                                     disabled={isLocked}
                                 >
-                                    Tải mẫu Excel
+                                    Tải mẫu Excel (STT, Họ tên, SĐT)
+                                </Button>
+                                <Button
+                                    icon={<DownloadOutlined />}
+                                    onClick={() => handleDownloadTemplate('full')}
+                                    className="template-btn"
+                                    disabled={isLocked}
+                                >
+                                    Mẫu đầy đủ (tùy chọn)
                                 </Button>
                                 <Upload
                                     accept=".xlsx,.xls"

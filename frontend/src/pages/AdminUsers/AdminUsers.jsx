@@ -241,7 +241,7 @@ export default function AdminUsers({ currentUser }) {
             <Input.Password />
           </Form.Item>
           <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
-            <Select options={[{ label: 'User', value: 'user' }, { label: 'Admin', value: 'admin' }]} />
+            <Select options={[{ label: 'User', value: 'user' }, { label: 'HDSaison', value: 'hdsaison' }, { label: 'Admin', value: 'admin' }]} />
           </Form.Item>
           <Form.Item name="is_active" label="Trạng thái" rules={[{ required: true }]}>
             <Select options={[{ label: 'Chờ duyệt', value: false }, { label: 'Đã duyệt', value: true }]} />
@@ -272,7 +272,7 @@ export default function AdminUsers({ currentUser }) {
             <Input.Password />
           </Form.Item>
           <Form.Item name="role" label="Vai trò" rules={[{ required: true }]}>
-            <Select options={[{ label: 'User', value: 'user' }, { label: 'Admin', value: 'admin' }]} />
+            <Select options={[{ label: 'User', value: 'user' }, { label: 'HDSaison', value: 'hdsaison' }, { label: 'Admin', value: 'admin' }]} />
           </Form.Item>
           <Form.Item name="is_active" label="Trạng thái" rules={[{ required: true }]}>
             <Select options={[{ label: 'Chờ duyệt', value: false }, { label: 'Đã duyệt', value: true }]} />

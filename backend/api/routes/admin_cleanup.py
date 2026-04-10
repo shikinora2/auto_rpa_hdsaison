@@ -39,7 +39,7 @@ async def run_cleanup_now(current_user=Depends(require_roles("admin"))):
 
 
 @router.post("/cleanup/reset-runtime")
-async def reset_runtime_state(current_user=Depends(require_roles("admin", "user"))):
+async def reset_runtime_state(current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Reset trạng thái runtime để đưa hệ thống về trạng thái như user mới đăng nhập."""
     summary = {
         "rpa_stopped": False,

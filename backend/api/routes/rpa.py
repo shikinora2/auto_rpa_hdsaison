@@ -21,7 +21,7 @@ from api.deps.auth import require_roles
 # Thread pool cho việc chạy sync callbacks
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
+router = APIRouter(dependencies=[Depends(require_roles("admin", "hdsaison"))])
 
 # Global state để quản lý RPA tasks
 rpa_state = {
@@ -551,7 +551,7 @@ class LoginRequest(BaseModel):
 
 
 @router.get("/session")
-async def check_session(force: bool = False, current_user=Depends(require_roles("admin", "user"))):
+async def check_session(force: bool = False, current_user=Depends(require_roles("admin", "hdsaison"))):
     """
     Kiểm tra trạng thái session đăng nhập HPO.
     - force=False (mặc định): trả về trạng thái cache nhanh, không mở browser.
@@ -582,7 +582,7 @@ async def check_session(force: bool = False, current_user=Depends(require_roles(
 
 
 @router.post("/login")
-async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
+async def login_hpo(request: LoginRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "hdsaison"))):
     """
     Đăng nhập vào HPO và lưu session
     Session được lưu để các lần chạy sau không cần đăng nhập lại
@@ -638,7 +638,7 @@ async def run_login_task(user_id: int, username: str, password: str, headless: b
 
 
 @router.post("/logout")
-async def logout_hpo(current_user=Depends(require_roles("admin", "user"))):
+async def logout_hpo(current_user=Depends(require_roles("admin", "hdsaison"))):
     """Đăng xuất và xóa session HPO"""
     from services.rpa_session_manager import get_rpa_session_manager
     

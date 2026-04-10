@@ -99,15 +99,19 @@ function normalizePathname(pathname) {
   return withSlash.length > 1 ? withSlash.replace(/\/+$/, '') : withSlash;
 }
 
-function tabFromPath(pathname, isAdmin) {
+function tabFromPath(pathname, isAdmin, canAccessRpa, canAccessZalo) {
   const normalized = normalizePathname(pathname).toLowerCase();
   const found = Object.entries(TAB_PATHS).find(([, path]) => path === normalized)?.[0];
   if (!found) return 'dashboard';
+  if (found === 'tasks' && !canAccessRpa) return 'dashboard';
+  if (found === 'zalo' && !canAccessZalo) return 'dashboard';
   if (found === 'admin-users' && !isAdmin) return 'dashboard';
   return found;
 }
 
-function pathFromTab(tabKey, isAdmin) {
+function pathFromTab(tabKey, isAdmin, canAccessRpa, canAccessZalo) {
+  if (tabKey === 'tasks' && !canAccessRpa) return TAB_PATHS.dashboard;
+  if (tabKey === 'zalo' && !canAccessZalo) return TAB_PATHS.dashboard;
   if (tabKey === 'admin-users' && !isAdmin) return TAB_PATHS.dashboard;
   return TAB_PATHS[tabKey] || TAB_PATHS.dashboard;
 }
@@ -171,7 +175,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePwdForm] = Form.useForm();
-  const [activeTab, setActiveTab] = useState(() => tabFromPath(window.location.pathname, false));
+  const [activeTab, setActiveTab] = useState(() => tabFromPath(window.location.pathname, false, false, false));
   const { logs, status, progress, taskStatus, qrImage } = useWebSocket();
   const lastTaskStatusRef = useRef('');
   const lastProgressRef = useRef(-1);
@@ -187,17 +191,24 @@ function App() {
   const [sessionStatus, setSessionStatus] = useState({ is_logged_in: false, checking: true });
   const [rpaStatus, setRpaStatus] = useState({ is_running: false, is_paused: false });
   const isAdmin = currentUser?.role === 'admin';
+  const canAccessRpa = isAdmin || currentUser?.role === 'hdsaison';
+  const canAccessZalo = canAccessRpa || currentUser?.role === 'user';
   const userStorageKey = currentUser?.id ? `uid_${currentUser.id}` : (currentUser?.username ? `u_${currentUser.username}` : 'guest');
-  const menuItems = isAdmin
-    ? [
-        ...baseMenuItems,
-        {
-          key: 'admin-users',
-          icon: <TeamOutlined />,
-          label: 'Quản Lý User',
-        },
-      ]
-    : baseMenuItems;
+  const menuItems = [
+    baseMenuItems[0],
+    ...(canAccessRpa ? [baseMenuItems[1]] : []),
+    ...(canAccessZalo ? [baseMenuItems[2]] : []),
+    baseMenuItems[3],
+    ...(isAdmin
+      ? [
+          {
+            key: 'admin-users',
+            icon: <TeamOutlined />,
+            label: 'Quản Lý User',
+          },
+        ]
+      : []),
+  ];
 
   useEffect(() => {
     const onPopState = () => {
@@ -208,12 +219,12 @@ function App() {
         }
         return;
       }
-      setActiveTab(tabFromPath(currentPath, isAdmin));
+      setActiveTab(tabFromPath(currentPath, isAdmin, canAccessRpa, canAccessZalo));
     };
 
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [isAuthenticated, isAdmin]);
+  }, [isAuthenticated, isAdmin, canAccessRpa, canAccessZalo]);
 
   useEffect(() => {
     const currentPath = normalizePathname(window.location.pathname);
@@ -227,11 +238,11 @@ function App() {
       return;
     }
 
-    const nextPath = pathFromTab(activeTab, isAdmin);
+    const nextPath = pathFromTab(activeTab, isAdmin, canAccessRpa, canAccessZalo);
     if (currentPath !== nextPath) {
       window.history.replaceState({}, '', nextPath);
     }
-  }, [isAuthenticated, isAuthChecking, activeTab, isAdmin]);
+  }, [isAuthenticated, isAuthChecking, activeTab, isAdmin, canAccessRpa, canAccessZalo]);
 
   const pushNotification = useCallback((entry) => {
     const nextItem = {
@@ -299,6 +310,11 @@ function App() {
     if (!isAuthenticated) {
       return;
     }
+    if (!canAccessRpa) {
+      setSessionStatus({ is_logged_in: false, checking: false });
+      setRpaStatus({ is_running: false, is_paused: false });
+      return;
+    }
     (async () => {
       try { const { data } = await configAPI.get(); setHeadless(data.headless || false); } catch (error) { console.debug('Failed to load config:', error); }
       try { const { data } = await rpaAPI.getStatus(); setRpaStatus(data); } catch (error) { console.debug('Failed to load RPA status:', error); }
@@ -310,7 +326,7 @@ function App() {
         setSessionStatus({ is_logged_in: false, checking: false });
       }
     })();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, canAccessRpa]);
 
   useEffect(() => {
     if (!isAuthenticated || !taskStatus) return;
@@ -536,6 +552,8 @@ function App() {
       onSessionUpdate={setSessionStatus}
       rpaStatus={liveRpaStatus}
       qrImage={qrImage}
+      canAccessRpa={canAccessRpa}
+      canAccessZalo={canAccessZalo}
     />
   );
 
@@ -819,15 +837,19 @@ function App() {
               {dashboardView}
             </div>
             <div style={{ display: activeTab === 'tasks' ? 'block' : 'none' }}>
-              <Tasks
-                taskStatus={taskStatus}
-                progress={progress}
-                userStorageKey={userStorageKey}
-                sessionStatus={liveSessionStatus}
-              />
+              {canAccessRpa && (
+                <Tasks
+                  taskStatus={taskStatus}
+                  progress={progress}
+                  userStorageKey={userStorageKey}
+                  sessionStatus={liveSessionStatus}
+                />
+              )}
             </div>
             <div style={{ display: activeTab === 'zalo' ? 'block' : 'none' }}>
-              <Zalo taskStatus={taskStatus} logs={logs} progress={progress} userStorageKey={userStorageKey} />
+              {canAccessZalo && (
+                <Zalo taskStatus={taskStatus} logs={logs} progress={progress} userStorageKey={userStorageKey} />
+              )}
             </div>
             <div style={{ display: activeTab === 'sms-gateway' ? 'block' : 'none' }}>
               <SmsGateway userStorageKey={userStorageKey} />

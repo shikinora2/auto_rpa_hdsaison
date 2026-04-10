@@ -66,6 +66,7 @@ def auth_headers(client):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == username).first()
+        assert user is not None
         user.is_active = True
         db.commit()
     finally:
@@ -88,6 +89,15 @@ def admin_headers(client):
         return {"Authorization": f"Bearer {token}"}
 
     username = f"admin_fallback_{uuid4().hex[:8]}"
+    password = _create_active_user_with_role(client, username=username, role_name="admin")
+
+    promoted_login = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert promoted_login.status_code == 200
+    token = promoted_login.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _create_active_user_with_role(client, username: str, role_name: str) -> str:
     password = "Pass@12345"
     client.post(
         "/api/auth/register",
@@ -97,11 +107,12 @@ def admin_headers(client):
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == username).first()
+        assert user is not None
         user.is_active = True
 
-        role = db.query(Role).filter(Role.name == "admin").first()
+        role = db.query(Role).filter(Role.name == role_name).first()
         if role is None:
-            role = Role(name="admin", description="Administrator")
+            role = Role(name=role_name, description=f"{role_name} role")
             db.add(role)
             db.flush()
 
@@ -113,7 +124,14 @@ def admin_headers(client):
     finally:
         db.close()
 
-    promoted_login = client.post("/api/auth/login", json={"username": username, "password": password})
-    assert promoted_login.status_code == 200
-    token = promoted_login.json()["access_token"]
+    return password
+
+
+@pytest.fixture(scope="function")
+def hdsaison_headers(client):
+    username = f"hdsaison_{uuid4().hex[:8]}"
+    password = _create_active_user_with_role(client, username=username, role_name="hdsaison")
+    login_resp = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

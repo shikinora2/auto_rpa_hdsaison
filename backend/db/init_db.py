@@ -12,7 +12,11 @@ def init_db_schema():
 
 def seed_default_roles(db: Session):
     existing = {r.name for r in db.query(Role).all()}
-    for role_name, desc in (("admin", "Administrator"), ("user", "Normal user")):
+    for role_name, desc in (
+        ("admin", "Administrator"),
+        ("user", "Normal user"),
+        ("hdsaison", "HDSaison operator"),
+    ):
         if role_name not in existing:
             db.add(Role(name=role_name, description=desc))
     db.commit()

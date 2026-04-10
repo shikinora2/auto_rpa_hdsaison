@@ -414,8 +414,8 @@ function SendTab({ userStorageKey }) {
     }
   };
 
-  const handleDownloadTemplate = () => {
-    window.open(filesAPI.templateUrl(), '_blank');
+  const handleDownloadTemplate = (mode = 'minimal') => {
+    window.open(filesAPI.templateUrl(mode), '_blank');
   };
 
   const insertTemplateVariable = (variable) => {
@@ -717,8 +717,11 @@ function SendTab({ userStorageKey }) {
           Danh sách nhận tin {customers.length > 0 && `(${filteredFileCustomers.length}/${customers.length} khách)`}
         </b>
         <Space>
-          <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate} size="small">
-            Tải mẫu Excel
+          <Button icon={<DownloadOutlined />} onClick={() => handleDownloadTemplate('minimal')} size="small">
+            Tải mẫu Excel (STT, Họ tên, SĐT)
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={() => handleDownloadTemplate('full')} size="small">
+            Mẫu đầy đủ (tùy chọn)
           </Button>
           <Upload accept=".xlsx,.xls,.csv" showUploadList={false} beforeUpload={() => false} onChange={handleUpload}>
             <Button icon={<FileExcelOutlined />} type="primary" size="small">

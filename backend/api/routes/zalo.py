@@ -21,7 +21,7 @@ from api.deps.auth import require_roles
 # Thread pool cho việc chạy sync Playwright (max 1 vì persistent context)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user", "hdsaison"))])
 
 # Cache QR code theo user để FE có thể fetch ngay khi reload trang
 _qr_cache_by_user: dict[int, dict] = {}
@@ -311,7 +311,7 @@ async def resolve_session_state(user_id: int, verify: bool = False) -> dict:
 # ============== Session Management ==============
 
 @router.get("/session")
-async def get_session_status(verify: bool = False, current_user=Depends(require_roles("admin", "user"))):
+async def get_session_status(verify: bool = False, current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Kiểm tra trạng thái session Zalo.
     - verify=False (mặc định): trả về trạng thái nhanh từ disk, không mở browser.
     - verify=True: mở headless browser để xác thực session thực tế (chậm hơn).
@@ -328,7 +328,7 @@ async def get_session_status(verify: bool = False, current_user=Depends(require_
 
 
 @router.post("/login")
-async def login_zalo(background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
+async def login_zalo(background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """
     Mở trình duyệt để đăng nhập Zalo (quét QR)
     Browser sẽ mở ở chế độ headful để người dùng quét QR
@@ -653,7 +653,7 @@ async def run_zalo_login_task(user_id: int):
 
 
 @router.post("/logout")
-async def logout_zalo(current_user=Depends(require_roles("admin", "user"))):
+async def logout_zalo(current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Xóa session Zalo (logout).
     Browser không còn tồn tại trong memory — chỉ cần reset state và xóa session disk.
     """
@@ -671,7 +671,7 @@ async def logout_zalo(current_user=Depends(require_roles("admin", "user"))):
 
 
 @router.get("/qr")
-async def get_qr_image(current_user=Depends(require_roles("admin", "user"))):
+async def get_qr_image(current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Trả về QR code đã cache (nếu còn hợp lệ) để FE hiện ngay khi reload trang.
     FE nên gọi endpoint này sau khi xác nhận session chưa đăng nhập.
     """
@@ -687,7 +687,7 @@ async def get_qr_image(current_user=Depends(require_roles("admin", "user"))):
 # ============== Automation ==============
 
 @router.post("/send-messages")
-async def send_messages(request: SendMessageRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
+async def send_messages(request: SendMessageRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Gửi tin nhắn hàng loạt"""
     session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
@@ -807,7 +807,7 @@ async def run_send_messages_task(user_id, customers, message_template, check_fri
 
 
 @router.post("/add-friends")
-async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user"))):
+async def add_friends(request: AddFriendRequest, background_tasks: BackgroundTasks, current_user=Depends(require_roles("admin", "user", "hdsaison"))):
     """Kết bạn hàng loạt"""
     session_state = await resolve_session_state(current_user["id"], verify=False)
     if not session_state["session_active"]:
@@ -1084,7 +1084,7 @@ async def run_add_friends_task(user_id, customers, greeting_template):
 async def add_friends_and_send(
     request: AddFriendAndSendRequest,
     background_tasks: BackgroundTasks,
-    current_user=Depends(require_roles("admin", "user")),
+    current_user=Depends(require_roles("admin", "user", "hdsaison")),
 ):
     """Kết bạn rồi gửi tin nhắn ngay sau đó (nếu có thể)."""
     session_state = await resolve_session_state(current_user["id"], verify=False)

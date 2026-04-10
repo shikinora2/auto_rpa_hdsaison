@@ -18,7 +18,7 @@ from utils.file_utils import atomic_write_json, safe_read_json
 from utils.encryption import encrypt_value, decrypt_value, is_encrypted
 from api.deps.auth import require_roles
 
-router = APIRouter(dependencies=[Depends(require_roles("admin"))])
+router = APIRouter(dependencies=[Depends(require_roles("admin", "hdsaison"))])
 
 # Lock toàn module để serialize mọi thao tác đọc/ghi config.
 # Tránh race condition khi nhiều async request ghi đồng thời.

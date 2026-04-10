@@ -12,7 +12,7 @@ from services.sms_gateway import SmsGatewayService
 from api.deps.auth import require_roles
 
 
-router = APIRouter(dependencies=[Depends(require_roles("admin", "user"))])
+router = APIRouter(dependencies=[Depends(require_roles("admin", "user", "hdsaison"))])
 
 
 # ============== Pydantic Models ==============

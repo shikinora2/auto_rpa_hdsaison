@@ -197,7 +197,8 @@ export const filesAPI = {
         }),
     delete: (filename, directory = 'uploads') =>
         api.delete(`/files/${filename}`, { params: { directory } }),
-    templateUrl: () => `${API_BASE_URL}/files/template`,
+    templateUrl: (mode = 'minimal') =>
+        `${API_BASE_URL}/files/template?mode=${encodeURIComponent(mode)}`,
 };
 
 // ============== SMS Gateway API ==============
