@@ -208,6 +208,7 @@ export const smsAPI = {
     saveConfig: (data) => api.post('/sms/config', data),
     send: (data) => api.post('/sms/send', data),
     health: () => api.get('/sms/health'),
+    listWsDevices: () => api.get('/sms/ws/devices'),
     getStatus: (id) => api.get(`/sms/status/${id}`),
     getMessages: (limit = 100, sync = false) => api.get('/sms/messages', { params: { limit, sync } }),
     clearMessages: () => api.delete('/sms/messages'),

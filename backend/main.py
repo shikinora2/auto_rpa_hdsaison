@@ -31,6 +31,8 @@ from config.settings import (
 )
 from api.websocket.connection_manager import manager
 from api.routes import auth, config, rpa, zalo, files, sms, admin_cleanup
+from services.sms_gateway import SmsGatewayService
+from services.sms_gateway_ws import sms_gateway_ws_hub, parse_ws_json
 from db.database import SessionLocal
 from db.init_db import init_db_schema, seed_default_roles, seed_default_admin
 from services.cleanup_service import get_cleanup_service
@@ -134,6 +136,7 @@ async def health_check():
     return {
         "status": "healthy",
         "websocket_connections": manager.connection_count,
+        "sms_gateway_ws_connections": sms_gateway_ws_hub.connection_count,
         "version": "1.0.0"
     }
 
@@ -156,6 +159,117 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket)
+
+
+@app.websocket("/ws/sms-gateway/device")
+async def sms_gateway_device_websocket(websocket: WebSocket):
+    """
+    WebSocket endpoint for Android SMS Gateway device.
+    Device should authenticate first, then handle command/response messages.
+    """
+    await sms_gateway_ws_hub.connect(websocket)
+    authed = False
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+
+            if raw == "ping":
+                await sms_gateway_ws_hub.refresh_heartbeat(websocket)
+                await websocket.send_text("pong")
+                continue
+
+            payload = parse_ws_json(raw)
+            if not payload:
+                await websocket.send_json({"type": "error", "error": "invalid_json"})
+                continue
+
+            msg_type = str(payload.get("type") or "").strip().lower()
+
+            if msg_type == "auth":
+                cfg = SmsGatewayService.load_config()
+                expected_username = str(cfg.get("username") or "").strip()
+                expected_password = str(cfg.get("password") or "")
+                recv_username = str(payload.get("username") or "").strip()
+                recv_password = str(payload.get("password") or "")
+
+                if not expected_username or not expected_password:
+                    await websocket.send_json(
+                        {
+                            "type": "auth_ack",
+                            "success": False,
+                            "error": "server_credentials_not_configured",
+                        }
+                    )
+                    await websocket.close(code=1008)
+                    break
+
+                if recv_username != expected_username or recv_password != expected_password:
+                    await websocket.send_json(
+                        {
+                            "type": "auth_ack",
+                            "success": False,
+                            "error": "invalid_credentials",
+                        }
+                    )
+                    await websocket.close(code=1008)
+                    break
+
+                device_id = str(payload.get("device_id") or payload.get("deviceId") or "").strip()
+                if not device_id:
+                    await websocket.send_json(
+                        {
+                            "type": "auth_ack",
+                            "success": False,
+                            "error": "device_id_required",
+                        }
+                    )
+                    await websocket.close(code=1008)
+                    break
+
+                metadata = {
+                    "device_name": payload.get("device_name") or payload.get("deviceName"),
+                    "platform": payload.get("platform") or "android",
+                    "app_version": payload.get("app_version") or payload.get("appVersion"),
+                }
+                meta = await sms_gateway_ws_hub.authenticate_device(
+                    websocket,
+                    device_id=device_id,
+                    metadata=metadata,
+                )
+                authed = True
+                await websocket.send_json(
+                    {
+                        "type": "auth_ack",
+                        "success": True,
+                        "device_id": meta.get("device_id"),
+                        "message": "authenticated",
+                    }
+                )
+                continue
+
+            if not authed:
+                await websocket.send_json({"type": "error", "error": "unauthorized"})
+                continue
+
+            if msg_type == "response":
+                resolved = await sms_gateway_ws_hub.resolve_response(websocket, payload)
+                if not resolved:
+                    await websocket.send_json({"type": "error", "error": "unknown_request"})
+                continue
+
+            if msg_type == "event":
+                await sms_gateway_ws_hub.refresh_heartbeat(websocket)
+                continue
+
+            await websocket.send_json({"type": "error", "error": "unsupported_message_type"})
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"SMS gateway websocket error: {e}")
+    finally:
+        await sms_gateway_ws_hub.disconnect(websocket)
 
 
 # ============== Serve Frontend (Production) ==============

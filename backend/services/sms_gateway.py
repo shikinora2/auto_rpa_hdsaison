@@ -11,12 +11,14 @@ from datetime import datetime
 from typing import Optional
 
 from config.settings import SMS_GATEWAY_CONFIG_FILE, SMS_HISTORY_FILE
+from services.sms_gateway_ws import sms_gateway_ws_hub
 
 
 DEFAULT_CONFIG = {
     "connection_mode": "local",
     "device_ip": "",
     "device_port": 8080,
+    "remote_device_id": "",
     "username": "",
     "password": "",
     "enabled": False,
@@ -26,7 +28,7 @@ DEFAULT_CONFIG = {
 
 
 class SmsGatewayService:
-    """Service tương tác với Android SMS Gateway app qua Local Server mode."""
+    """Service tương tác với Android SMS Gateway app (Local HTTP or Remote WS)."""
 
     # ---------- Config ----------
 
@@ -38,9 +40,8 @@ class SmsGatewayService:
                 with open(SMS_GATEWAY_CONFIG_FILE, encoding="utf-8") as f:
                     cfg = json.load(f)
                 merged = {**DEFAULT_CONFIG, **cfg}
-                # Force local-only mode, bỏ logic cloud/self-hosted cũ.
-                merged["connection_mode"] = "local"
-                merged.pop("custom_base_url", None)
+                if merged.get("connection_mode") not in ("local", "remote_ws"):
+                    merged["connection_mode"] = "local"
                 return merged
             except Exception:
                 pass
@@ -52,10 +53,15 @@ class SmsGatewayService:
         SMS_GATEWAY_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         current = SmsGatewayService.load_config()
         current.update(config)
-        current["connection_mode"] = "local"
-        current.pop("custom_base_url", None)
+        if current.get("connection_mode") not in ("local", "remote_ws"):
+            current["connection_mode"] = "local"
         with open(SMS_GATEWAY_CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(current, f, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _is_remote_ws(config: Optional[dict] = None) -> bool:
+        cfg = config or SmsGatewayService.load_config()
+        return str(cfg.get("connection_mode") or "local").lower() == "remote_ws"
 
     # ---------- Gateway URL ----------
 
@@ -95,8 +101,11 @@ class SmsGatewayService:
 
     @staticmethod
     async def check_health(config: Optional[dict] = None) -> dict:
-        """Ping gateway để kiểm tra kết nối Local."""
+        """Ping gateway để kiểm tra kết nối Local hoặc Remote WebSocket."""
         cfg = config or SmsGatewayService.load_config()
+        if SmsGatewayService._is_remote_ws(cfg):
+            return await SmsGatewayService._check_health_remote_ws(cfg)
+
         base_url = SmsGatewayService._base_url(cfg)
         auth = SmsGatewayService._auth(cfg)
 
@@ -174,12 +183,51 @@ class SmsGatewayService:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    @staticmethod
+    async def _check_health_remote_ws(cfg: dict) -> dict:
+        preferred_device = str(cfg.get("remote_device_id") or "").strip() or None
+        try:
+            result = await sms_gateway_ws_hub.request_device(
+                command="health",
+                payload={},
+                device_id=preferred_device,
+                timeout_seconds=10,
+            )
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Thiết bị chưa online qua WebSocket: {e}",
+            }
+
+        if not result.get("success", False):
+            return {
+                "status": "error",
+                "message": str(result.get("error") or "Thiết bị phản hồi lỗi health"),
+                "device_id": result.get("device_id"),
+            }
+
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        if data.get("status") in ("ok", "warn", "error"):
+            response = dict(data)
+            response["device_id"] = result.get("device_id")
+            return response
+
+        return {
+            "status": "ok",
+            "message": "Thiết bị online qua WebSocket",
+            "device_id": result.get("device_id"),
+            "device_info": data,
+        }
+
     # ---------- Status Polling ----------
 
     @staticmethod
     async def get_message_status(message_id: str, config: Optional[dict] = None) -> dict:
         """Kéo trạng thái mới nhất của SMS dựa vào message_id."""
         cfg = config or SmsGatewayService.load_config()
+        if SmsGatewayService._is_remote_ws(cfg):
+            return await SmsGatewayService._get_message_status_remote_ws(message_id=message_id, config=cfg)
+
         base_url = SmsGatewayService._base_url(cfg)
         auth = SmsGatewayService._auth(cfg)
 
@@ -211,6 +259,34 @@ class SmsGatewayService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    @staticmethod
+    async def _get_message_status_remote_ws(message_id: str, config: dict) -> dict:
+        preferred_device = str(config.get("remote_device_id") or "").strip() or None
+        try:
+            result = await sms_gateway_ws_hub.request_device(
+                command="message_status",
+                payload={"message_id": message_id},
+                device_id=preferred_device,
+                timeout_seconds=12,
+            )
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+        if not result.get("success", False):
+            return {
+                "success": False,
+                "error": str(result.get("error") or "Gateway trả về lỗi"),
+            }
+
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        state = data.get("state") or data.get("status") or "Unknown"
+        return {
+            "success": True,
+            "state": state,
+            "error": data.get("error"),
+            "device_id": result.get("device_id") or data.get("deviceId"),
+        }
+
     # ---------- Send SMS ----------
 
     @staticmethod
@@ -224,6 +300,9 @@ class SmsGatewayService:
         Trả về dict gồm: success (bool), message_id, response hoặc error, step.
         """
         cfg = config or SmsGatewayService.load_config()
+        if SmsGatewayService._is_remote_ws(cfg):
+            return await SmsGatewayService._send_sms_remote_ws(phone_numbers=phone_numbers, text=text, config=cfg)
+
         base_url = SmsGatewayService._base_url(cfg)
         auth = SmsGatewayService._auth(cfg)
 
@@ -298,6 +377,48 @@ class SmsGatewayService:
             return {"success": False, "step": "gateway_timeout", "error": "Timeout khi gửi SMS"}
         except Exception as e:
             return {"success": False, "step": "gateway_exception", "error": str(e)}
+
+    @staticmethod
+    async def _send_sms_remote_ws(
+        phone_numbers: list[str],
+        text: str,
+        config: dict,
+    ) -> dict:
+        phones = [str(p).strip() for p in phone_numbers if str(p).strip()]
+        if not phones:
+            return {"success": False, "step": "validate_input", "error": "Không có số điện thoại hợp lệ"}
+
+        payload = SmsGatewayService._build_message_payload(config, phones, text)
+        fallback_message_id = str(uuid.uuid4())[:8]
+        preferred_device = str(config.get("remote_device_id") or "").strip() or None
+
+        try:
+            result = await sms_gateway_ws_hub.request_device(
+                command="send_sms",
+                payload=payload,
+                device_id=preferred_device,
+                timeout_seconds=25,
+            )
+        except asyncio.TimeoutError:
+            return {"success": False, "step": "gateway_timeout", "error": "Timeout khi gửi SMS qua WebSocket"}
+        except Exception as e:
+            return {"success": False, "step": "gateway_connect", "error": str(e)}
+
+        if not result.get("success", False):
+            return {
+                "success": False,
+                "step": "gateway_send",
+                "error": str(result.get("error") or "Thiết bị từ chối gửi SMS"),
+            }
+
+        response = result.get("data") if isinstance(result.get("data"), dict) else {}
+        resolved_id = response.get("id") or response.get("message_id") or fallback_message_id
+        return {
+            "success": True,
+            "step": "gateway_send",
+            "message_id": resolved_id,
+            "response": response,
+        }
 
     # ---------- History ----------
 

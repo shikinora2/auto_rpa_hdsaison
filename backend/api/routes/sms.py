@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from services.sms_gateway import SmsGatewayService
+from services.sms_gateway_ws import sms_gateway_ws_hub
 from api.deps.auth import require_roles
 
 
@@ -18,12 +19,13 @@ router = APIRouter(dependencies=[Depends(require_roles("admin", "user", "hdsaiso
 # ============== Pydantic Models ==============
 
 class SmsGatewayConfig(BaseModel):
-    connection_mode: Literal["local"] = Field(
+    connection_mode: Literal["local", "remote_ws"] = Field(
         "local",
-        description="Chế độ kết nối: local"
+        description="Chế độ kết nối: local hoặc remote_ws"
     )
     device_ip: str = Field("", description="IP của thiết bị Android trên mạng LAN")
     device_port: int = Field(8080, description="Port của Gateway app (mặc định 8080)")
+    remote_device_id: str = Field("", description="Device ID của app Android kết nối WebSocket (optional)")
     username: str = Field("", description="Username từ Gateway app")
     password: str = Field("", description="Password từ Gateway app")
     enabled: bool = Field(False, description="Bật/tắt SMS Gateway")
@@ -54,7 +56,6 @@ async def save_config(config: SmsGatewayConfig):
     """Lưu cấu hình gateway vào file JSON."""
     try:
         data = config.model_dump()
-        data["connection_mode"] = "local"
         # Nếu password là "****" (không thay đổi), giữ nguyên giá trị cũ
         if data.get("password") == "****":
             old = SmsGatewayService.load_config()
@@ -76,6 +77,7 @@ async def check_health():
 async def send_sms(request: SendSmsRequest):
     """Gửi SMS tới một hoặc nhiều số điện thoại qua Android Gateway."""
     cfg = SmsGatewayService.load_config()
+    connection_mode = str(cfg.get("connection_mode") or "local")
 
     step = "validate_config_enabled"
     if not cfg.get("enabled"):
@@ -84,8 +86,15 @@ async def send_sms(request: SendSmsRequest):
             detail="[validate_config_enabled] SMS Gateway chưa được bật. Vào cấu hình để kích hoạt."
         )
 
+    step = "validate_config_credentials"
+    if not cfg.get("username") or not cfg.get("password"):
+        raise HTTPException(
+            status_code=400,
+            detail="[validate_config_credentials] Chưa cấu hình username/password của SMS Gateway"
+        )
+
     step = "validate_config_device"
-    if not cfg.get("device_ip"):
+    if connection_mode == "local" and not cfg.get("device_ip"):
         raise HTTPException(
             status_code=400,
             detail="[validate_config_device] Chưa cấu hình IP thiết bị Android"
@@ -190,3 +199,13 @@ async def clear_messages():
         return {"success": True, "message": "Đã xóa toàn bộ lịch sử tin nhắn"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ws/devices", summary="Danh sách thiết bị Android đang online qua WebSocket")
+async def list_ws_devices():
+    """Trả về danh sách device đang kết nối WebSocket tới VPS."""
+    return {
+        "success": True,
+        "count": sms_gateway_ws_hub.connection_count,
+        "devices": sms_gateway_ws_hub.list_devices(),
+    }

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Tabs, Form, Input, InputNumber, Switch, Button, Table, Tag,
   Space, Typography, Divider, message, Popconfirm, Badge, Alert,
-  Tooltip, Upload, Progress, Checkbox,
+  Tooltip, Upload, Progress, Checkbox, Radio, Select,
 } from 'antd';
 import {
   MobileOutlined, SendOutlined, HistoryOutlined,
@@ -90,10 +90,21 @@ function StatusBadge({ status }) {
 // ─── Tab 1: Cấu hình ────────────────────────────────────
 function ConfigTab() {
   const [form] = Form.useForm();
+  const connectionMode = Form.useWatch('connection_mode', form);
   const deviceIp = Form.useWatch('device_ip', form);
   const [saving, setSaving] = useState(false);
   const [pinging, setPinging] = useState(false);
   const [healthStatus, setHealthStatus] = useState(null); // null | { status, message }
+  const [wsDevices, setWsDevices] = useState([]);
+
+  const loadWsDevices = useCallback(async () => {
+    try {
+      const { data } = await smsAPI.listWsDevices();
+      setWsDevices(Array.isArray(data?.devices) ? data.devices : []);
+    } catch {
+      setWsDevices([]);
+    }
+  }, []);
 
   const checkHealthStatus = async () => {
     setPinging(true);
@@ -112,20 +123,26 @@ function ConfigTab() {
     smsAPI.getConfig().then(({ data }) => {
       if (data.success) {
         form.setFieldsValue(data.config);
-        if (data.config.device_ip) {
+        if (data.config.connection_mode === 'remote_ws') {
+          loadWsDevices();
+          checkHealthStatus();
+        } else if (data.config.device_ip) {
           checkHealthStatus();
         }
       }
     }).catch(() => { });
-  }, [form]);
+  }, [form, loadWsDevices]);
 
   useEffect(() => {
-    if (!deviceIp) return undefined;
+    if (connectionMode === 'local' && !deviceIp) return undefined;
     const timer = setInterval(() => {
       checkHealthStatus();
+      if (connectionMode === 'remote_ws') {
+        loadWsDevices();
+      }
     }, 30000);
     return () => clearInterval(timer);
-  }, [deviceIp]);
+  }, [connectionMode, deviceIp, loadWsDevices]);
 
   const handleSave = async (values) => {
     setSaving(true);
@@ -167,15 +184,24 @@ function ConfigTab() {
         layout="vertical"
         onFinish={handleSave}
         initialValues={{
+          connection_mode: 'local',
           device_port: 8080,
+          remote_device_id: '',
           enabled: false,
           use_specific_sim: false,
           sim_number: 1,
         }}
         className="sms-config-form"
       >
-        <Form.Item label="Chế độ Kết nối" style={{ marginBottom: 16 }}>
-          <Button type="primary" disabled>Local Server (Chung Wifi/LAN)</Button>
+        <Form.Item label="Chế độ Kết nối" name="connection_mode" style={{ marginBottom: 16 }}>
+          <Radio.Group
+            options={[
+              { label: 'Local Server (cung mang LAN/Wifi)', value: 'local' },
+              { label: 'Remote WebSocket (Android ket noi ra VPS)', value: 'remote_ws' },
+            ]}
+            optionType="button"
+            buttonStyle="solid"
+          />
         </Form.Item>
 
         {healthStatus && (
@@ -193,44 +219,85 @@ function ConfigTab() {
           />
         )}
 
-        <Alert
-          className="sms-info-alert"
-          type="info"
-          showIcon
-          message="Hướng dẫn kết nối Local Server"
-          description={
-            <ol style={{ margin: 0, paddingLeft: 16 }}>
-              <li>Bật <b>Local Server</b> trong app Android SMS Gateway.</li>
-              <li>Đảm bảo máy tính và điện thoại <b>cùng mạng WiFi/LAN</b>.</li>
-              <li>Nhập IP hiển thị, Port, Username, Password vào form bên dưới.</li>
-            </ol>
-          }
-          style={{ marginBottom: 16 }}
-        />
-
-        <div className="sms-form-row">
-          <Form.Item
-            name="device_ip"
-            label="IP Thiết bị Android"
-            rules={[{ required: true, message: 'Nhập IP thiết bị' }]}
-            className="sms-form-item-flex"
-          >
-            <Input
-              prefix={<MobileOutlined />}
-              placeholder="192.168.1.x"
-              autoComplete="off"
+        {connectionMode === 'local' && (
+          <>
+            <Alert
+              className="sms-info-alert"
+              type="info"
+              showIcon
+              message="Huong dan ket noi Local Server"
+              description={
+                <ol style={{ margin: 0, paddingLeft: 16 }}>
+                  <li>Bat <b>Local Server</b> trong app Android SMS Gateway.</li>
+                  <li>Dam bao may tinh va dien thoai <b>cung mang WiFi/LAN</b>.</li>
+                  <li>Nhap IP hien thi, Port, Username, Password vao form ben duoi.</li>
+                </ol>
+              }
+              style={{ marginBottom: 16 }}
             />
-          </Form.Item>
 
-          <Form.Item
-            name="device_port"
-            label="Port"
-            rules={[{ required: true }]}
-            style={{ width: 140, flexShrink: 0 }}
-          >
-            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
-          </Form.Item>
-        </div>
+            <div className="sms-form-row">
+              <Form.Item
+                name="device_ip"
+                label="IP Thiet bi Android"
+                rules={[{ required: true, message: 'Nhap IP thiet bi' }]}
+                className="sms-form-item-flex"
+              >
+                <Input
+                  prefix={<MobileOutlined />}
+                  placeholder="192.168.1.x"
+                  autoComplete="off"
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="device_port"
+                label="Port"
+                rules={[{ required: true }]}
+                style={{ width: 140, flexShrink: 0 }}
+              >
+                <InputNumber min={1} max={65535} style={{ width: '100%' }} />
+              </Form.Item>
+            </div>
+          </>
+        )}
+
+        {connectionMode === 'remote_ws' && (
+          <>
+            <Alert
+              className="sms-info-alert"
+              type="info"
+              showIcon
+              message="Huong dan ket noi Remote WebSocket"
+              description={
+                <ol style={{ margin: 0, paddingLeft: 16 }}>
+                  <li>Tren app Android, bat che do <b>Remote WebSocket</b> va ket noi toi VPS.</li>
+                  <li>Cau hinh <b>username/password</b> giong nhau giua app Android va web.</li>
+                  <li>Neu co nhieu dien thoai, chon <b>Device ID</b> can gui SMS.</li>
+                </ol>
+              }
+              style={{ marginBottom: 16 }}
+            />
+
+            <div className="sms-form-actions" style={{ marginBottom: 16 }}>
+              <Button type="default" icon={<ReloadOutlined />} onClick={loadWsDevices}>
+                Tai danh sach thiet bi WS
+              </Button>
+            </div>
+
+            <Form.Item name="remote_device_id" label="Device ID (optional)">
+              <Select
+                allowClear
+                showSearch
+                placeholder="Chon device online qua WebSocket"
+                options={wsDevices.map((d) => ({
+                  value: d.device_id,
+                  label: `${d.device_id}${d.device_name ? ` - ${d.device_name}` : ''}`,
+                }))}
+              />
+            </Form.Item>
+          </>
+        )}
 
         <div className="sms-form-row">
           <Form.Item
