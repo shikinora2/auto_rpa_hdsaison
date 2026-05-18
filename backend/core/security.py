@@ -40,7 +40,7 @@ def create_refresh_token() -> str:
 
 
 def get_refresh_expiry() -> datetime:
-    return datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    return datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
 
 def create_password_reset_token() -> str:
@@ -48,7 +48,7 @@ def create_password_reset_token() -> str:
 
 
 def get_password_reset_expiry() -> datetime:
-    return datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+    return datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
 
 
 def sha256_text(value: str) -> str:

@@ -84,7 +84,7 @@ export default function LoginPage({ onLoginSuccess }) {
             type="info"
             showIcon
             className="login-admin-alert"
-            message="Tài khoản quản trị để kiểm thử"
+            title="Tài khoản quản trị để kiểm thử"
             description="admin / 123456"
           />
           <Form
@@ -115,7 +115,7 @@ export default function LoginPage({ onLoginSuccess }) {
             type="warning"
             showIcon
             className="login-register-alert"
-            message="Tài khoản mới cần phê duyệt"
+            title="Tài khoản mới cần phê duyệt"
             description="Sau khi đăng ký, bạn cần chờ quản trị viên phê duyệt trước khi đăng nhập."
           />
           <Form layout="vertical" onFinish={handleRegister} requiredMark={false}>
@@ -140,7 +140,7 @@ export default function LoginPage({ onLoginSuccess }) {
       label: 'Quên mật khẩu',
       children: (
         <div className="login-tab-content">
-          {forgotInfo && <Alert type="info" showIcon message={forgotInfo} style={{ marginBottom: 12 }} />}
+          {forgotInfo && <Alert type="info" showIcon title={forgotInfo} style={{ marginBottom: 12 }} />}
           <Form layout="vertical" onFinish={handleForgot} requiredMark={false}>
             <Form.Item name="username_or_email" label="Username hoặc Email" rules={[{ required: true }]}>
               <Input prefix={<UserOutlined />} size="large" />
@@ -170,8 +170,8 @@ export default function LoginPage({ onLoginSuccess }) {
 
   return (
     <div className="login-page">
-      <Card className="login-card" bordered={false}>
-        <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 16 }}>
+      <Card className="login-card" variant="borderless">
+        <Space orientation="vertical" size={4} style={{ width: '100%', marginBottom: 16 }}>
           <Title level={3} className="login-title">Automation Marketing</Title>
           <Text className="login-subtitle">Nền tảng vận hành RPA và chăm sóc khách hàng</Text>
           <Space size={8} className="login-security-note">
@@ -184,7 +184,7 @@ export default function LoginPage({ onLoginSuccess }) {
           type="success"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Vui lòng đăng nhập để tiếp tục"
+          title="Vui lòng đăng nhập để tiếp tục"
           description="Chỉ tài khoản đã được duyệt mới có thể truy cập hệ thống."
         />
 

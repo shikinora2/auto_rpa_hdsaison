@@ -203,7 +203,7 @@ export default function AdminUsers({ currentUser }) {
       <Alert
         type="info"
         showIcon
-        message="Khuyến nghị"
+        title="Khuyến nghị"
         description="Tài khoản mới nên để trạng thái chờ duyệt, chỉ bật hoạt động khi đã xác minh thông tin."
       />
 

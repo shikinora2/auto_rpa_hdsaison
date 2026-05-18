@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -14,6 +14,10 @@ from sqlalchemy.orm import relationship
 from .database import Base
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -22,8 +26,8 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=True, index=True)
     password_hash = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
 
@@ -58,7 +62,7 @@ class RefreshToken(Base):
     token_hash = Column(String(255), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime, nullable=False, index=True)
     revoked_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
 
 class PasswordResetToken(Base):
@@ -69,7 +73,7 @@ class PasswordResetToken(Base):
     token_hash = Column(String(255), nullable=False, unique=True, index=True)
     expires_at = Column(DateTime, nullable=False, index=True)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
 
 class AdminAuditLog(Base):
@@ -79,4 +83,4 @@ class AdminAuditLog(Base):
     admin_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     target_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     action = Column(String(64), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)

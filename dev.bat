@@ -14,7 +14,7 @@ echo.
 set ROOT=%~dp0
 set BACKEND_DIR=%ROOT%backend
 set FRONTEND_DIR=%ROOT%frontend
-set VENV_DIR=%ROOT%.venv
+set VENV_DIR=%ROOT%.venv312
 
 REM ── Kiểm tra Python ──────────────────────────────────────────
 python --version >nul 2>&1

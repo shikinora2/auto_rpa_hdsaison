@@ -31,6 +31,7 @@ const TEMPLATE_VARIABLES = [
     { label: 'Anh/Chị', value: '{gender}' },
     { label: 'Số điện thoại', value: '{phone}' },
     { label: 'Mã hợp đồng', value: '{contract_id}' },
+    { label: 'Sản phẩm', value: '{san_pham}' },
     { label: 'Tên nhân viên', value: '{my_name}' },
     { label: 'Địa chỉ', value: '{address}' },
     { label: 'Số CCCD', value: '{cccd}' },
@@ -185,8 +186,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         login: false,
         sendMessages: false,
         addFriends: false,
-        addFriendsAndSend: false,
-    });
+            });
     const pollRef = useRef(null);
     const messageInputRef = useRef(null);
     const greetingInputRef = useRef(null);
@@ -209,16 +209,14 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         const task = taskStatus?.data?.task;
         const st = taskStatus?.status;
         if (!task || (st !== 'running' && st !== 'active' && st !== 'paused')) return null;
-        if (task === 'add_friends' || task === 'send_messages' || task === 'add_friends_and_send') return task;
+        if (task === 'add_friends' || task === 'send_messages') return task;
         return null;
     }, [taskStatus]);
 
     const markPendingStatus = (taskType) => {
         const pendingText = taskType === 'add_friends'
             ? 'Đang kết bạn...'
-            : taskType === 'add_friends_and_send'
-                ? 'Đang kết bạn + gửi tin...'
-                : 'Đang nhắn tin...';
+            : 'Đang nhắn tin...';
         setCustomers(prev => prev.map(customer => (
             String(customer.phone || '').trim()
                 ? { ...customer, taskStatus: { code: 'pending', text: pendingText } }
@@ -231,7 +229,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
 
         if (taskType === 'send_messages') {
             details = resultData?.results?.details || [];
-        } else if (taskType === 'add_friends' || taskType === 'add_friends_and_send') {
+        } else if (taskType === 'add_friends') {
             details = resultData?.results || [];
         }
 
@@ -346,20 +344,22 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         }
 
         if (st === 'completed' || st === 'error' || st === 'stopping') {
-            setLoading({ login: false, sendMessages: false, addFriends: false, addFriendsAndSend: false });
+            setLoading({ login: false, sendMessages: false, addFriends: false,  });
             stopSessionPolling();
         }
 
-        if (st === 'completed' && (task === 'send_messages' || task === 'add_friends' || task === 'add_friends_and_send')) {
+        if (st === 'completed' && (task === 'send_messages' || task === 'add_friends')) {
             applyTaskResultToCustomers(task, taskStatus.data || {});
         }
 
-        if (st === 'error' && (task === 'send_messages' || task === 'add_friends' || task === 'add_friends_and_send')) {
+        if (st === 'zalo_row_update') {
+            applyTaskResultToCustomers(task, taskStatus.data || {});
+        }
+
+        if (st === 'error' && (task === 'send_messages' || task === 'add_friends')) {
             const taskLabel = task === 'add_friends'
                 ? 'kết bạn'
-                : task === 'add_friends_and_send'
-                    ? 'kết bạn + gửi tin'
-                    : 'nhắn tin';
+                : 'nhắn tin';
             const errorText = String(taskStatus?.data?.error || '');
             const isRateLimited = /Tìm số điện thoại quá nhiều lần|hoạt động bất thường|Bạn hãy thử lại vào/i.test(errorText);
             setCustomers(prev => prev.map(customer => (
@@ -399,9 +399,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
             code: 'pending',
             text: runningTask === 'add_friends'
                 ? 'Đang kết bạn...'
-                : runningTask === 'add_friends_and_send'
-                    ? 'Đang kết bạn + gửi tin...'
-                    : 'Đang gửi tin nhắn...',
+                : 'Đang gửi tin nhắn...',
         });
     }, [progress, getRunningTaskType, updateCustomerStatusByPhone]);
 
@@ -420,13 +418,11 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         if (!phoneMatch) return;
         const phone = phoneMatch[1];
 
-        if (runningTask === 'add_friends' || runningTask === 'add_friends_and_send') {
+        if (runningTask === 'add_friends') {
             if (text.includes('Kết bạn thành công')) {
                 updateCustomerStatusByPhone(
                     phone,
-                    runningTask === 'add_friends_and_send'
-                        ? { code: 'success_and_sent', text: 'Kết bạn + gửi tin thành công' }
-                        : { code: 'success', text: 'Đã gửi lời mời kết bạn' }
+                    { code: 'success', text: 'Đã gửi lời mời kết bạn' }
                 );
                 return;
             }
@@ -661,51 +657,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
         }
     };
 
-    const handleAddFriendsAndSend = async () => {
-        if (!session.is_active) {
-            message.warning('Vui lòng đăng nhập Zalo trước');
-            return;
-        }
-        if (customers.length === 0) {
-            message.warning('Vui lòng tải danh sách khách hàng');
-            return;
-        }
-        if (!messageTemplate.trim()) {
-            message.warning('Vui lòng nhập nội dung tin nhắn (tab Soạn tin nhắn)');
-            return;
-        }
-        if (greetingTemplate.length > 150) {
-            message.warning('Nội dung lời mời kết bạn tối đa 150 ký tự');
-            return;
-        }
-
-        const validCustomers = customers.filter(customer => String(customer.phone || '').trim());
-        if (validCustomers.length === 0) {
-            message.warning('Danh sách hiện tại không còn khách hàng nào có số điện thoại hợp lệ');
-            return;
-        }
-
-        setLoading(prev => ({ ...prev, addFriendsAndSend: true }));
-        markPendingStatus('add_friends_and_send');
-        try {
-            const payload = validCustomers.map((customer) => {
-                const next = { ...customer };
-                delete next._key;
-                return next;
-            });
-            await zaloAPI.addFriendsAndSend({
-                customers: payload,
-                greeting_template: greetingTemplate,
-                message_template: messageTemplate,
-                attachment_filename: attachmentFilename || null,
-            });
-            message.success('Đã bắt đầu tác vụ kết bạn rồi gửi tin nhắn');
-        } catch (error) {
-            message.error(error.response?.data?.detail || 'Không thể chạy tác vụ kết bạn rồi gửi tin');
-            setLoading(prev => ({ ...prev, addFriendsAndSend: false }));
-        }
-    };
-
+    
     const customerColumns = [
         { title: 'STT', key: 'stt', width: 55, render: (_, __, i) => i + 1, align: 'center' },
         { title: 'Số điện thoại', dataIndex: 'phone', key: 'phone', width: 140 },
@@ -840,7 +792,7 @@ function Zalo({ taskStatus, logs, progress, userStorageKey }) {
                                             <TextArea
                                                 ref={messageInputRef}
                                                 rows={4}
-                                                placeholder="Nhập nội dung tin nhắn. Sử dụng các nút {name}, {gender}, {contract_id}... để chèn nhanh thông tin khách hàng"
+                                                placeholder="Nhập nội dung tin nhắn. Sử dụng các nút {name}, {gender}, {contract_id}, {san_pham}... để chèn nhanh thông tin khách hàng"
                                                 value={messageTemplate}
                                                 onChange={(e) => setMessageTemplate(e.target.value)}
                                                 disabled={isLocked}

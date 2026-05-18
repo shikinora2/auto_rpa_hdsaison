@@ -109,6 +109,31 @@ def _create_task_zip_artifact(save_directory: str, start_date_ddmmyyyy: str, tas
         return None
 
 
+def _get_excel_artifact(save_directory: str, start_date_ddmmyyyy: str) -> Optional[str]:
+    """Tìm file Excel mới nhất trong thư mục và copy ra DOWNLOADS_DIR để tải trực tiếp."""
+    try:
+        month_folder = _make_month_folder_name(start_date_ddmmyyyy)
+        source_dir = Path(save_directory) / month_folder
+        if not source_dir.exists() or not source_dir.is_dir():
+            return None
+
+        excel_files = list(source_dir.glob("*.xlsx"))
+        if not excel_files:
+            return None
+            
+        latest_excel = max(excel_files, key=lambda f: f.stat().st_mtime)
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        dest_path = DOWNLOADS_DIR / latest_excel.name
+        
+        # Nếu đang lưu thẳng vào DOWNLOADS_DIR thì không cần copy
+        if latest_excel.resolve() != dest_path.resolve():
+            shutil.copy2(latest_excel, dest_path)
+            
+        return latest_excel.name
+    except Exception:
+        return None
+
+
 def _new_progress_tracker(task_name: str) -> dict:
     return {
         "task": task_name,
@@ -470,7 +495,7 @@ async def run_scrape_details_task(username, password, start_date, end_date,
             )
             progress_summary = _build_progress_summary(progress_tracker)
 
-        artifact_filename = _create_task_zip_artifact(save_directory, start_date, "rpa_details")
+        artifact_filename = _get_excel_artifact(save_directory, start_date)
         if artifact_filename:
             await log_to_ws(f"Đã tạo file tải tự động: {artifact_filename}", "success")
 

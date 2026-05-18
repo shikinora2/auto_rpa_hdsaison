@@ -23,6 +23,7 @@ const TEMPLATE_VARIABLES = [
   { label: 'Anh/Chị', value: '{gender}' },
   { label: 'SĐT', value: '{phone}' },
   { label: 'Mã HĐ', value: '{contract_id}' },
+  { label: 'Sản phẩm', value: '{san_pham}' },
   { label: 'Số CCCD', value: '{cccd}' },
   { label: 'Địa chỉ', value: '{address}' },
 ];
@@ -576,6 +577,7 @@ function SendTab({ userStorageKey }) {
           name: '',
           gender: '',
           contract_id: '',
+          san_pham: '',
           cccd: '',
           address: '',
         };
@@ -585,6 +587,8 @@ function SendTab({ userStorageKey }) {
         .replace(/{gender}/g, toVietnameseHonorific(customer.gender))
         .replace(/{phone}/g, customer.phone || '')
         .replace(/{contract_id}/g, customer.contract_id || '')
+        .replace(/{san_pham}/g, customer.product || customer.products_joined || customer.san_pham || '')
+        .replace(/{product}/g, customer.product || customer.products_joined || customer.san_pham || '')
         .replace(/{cccd}/g, customer.cccd || '')
         .replace(/{address}/g, customer.address || '');
 
@@ -897,7 +901,7 @@ function SendTab({ userStorageKey }) {
       {/* Cấu hình gửi nâng cao */}
       <div style={{ padding: '12px 16px', background: '#1f1f1f', borderRadius: 8, border: '1px solid #303030', marginBottom: 20 }}>
         <b style={{ display: 'block', marginBottom: 12 }}>Cấu hình gửi:</b>
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="small" style={{ width: '100%' }}>
           <Space align="center" style={{ flexWrap: 'wrap' }}>
             <span>Độ trễ random giữa mỗi lần gửi:</span>
             <InputNumber

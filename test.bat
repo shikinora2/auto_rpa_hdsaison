@@ -5,7 +5,7 @@ setlocal
 title automation marketing - All-in-One Test
 
 set ROOT=%~dp0
-set PYTHON_EXE=%ROOT%.venv\Scripts\python.exe
+set PYTHON_EXE=%ROOT%.venv312\Scripts\python.exe
 set BACKEND_DIR=%ROOT%backend
 set FRONTEND_DIR=%ROOT%frontend
 
@@ -18,8 +18,8 @@ echo.
 if not exist "%PYTHON_EXE%" (
     echo [ERROR] Không tìm thấy Python virtual environment tại:
     echo         %PYTHON_EXE%
-    echo [HINT]  Hãy chạy dev.bat trước để tạo .venv hoặc tự tạo bằng:
-    echo         python -m venv .venv
+    echo [HINT]  Hãy chạy dev.bat trước để tạo .venv312 hoặc tự tạo bằng:
+    echo         python -m venv .venv312
     exit /b 1
 )
 
@@ -29,7 +29,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/3] Backend tests (pytest)...
+echo [1/4] Backend tests (pytest)...
 pushd "%BACKEND_DIR%"
 "%PYTHON_EXE%" -m pytest
 if errorlevel 1 (
@@ -40,7 +40,7 @@ if errorlevel 1 (
 popd
 
 echo.
-echo [2/3] Frontend lint...
+echo [2/4] Frontend lint...
 pushd "%FRONTEND_DIR%"
 call npm run lint
 if errorlevel 1 (
@@ -50,7 +50,16 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Frontend build...
+echo [3/4] Frontend tests...
+call npm run test:run
+if errorlevel 1 (
+    popd
+    echo [FAIL] Frontend tests thất bại.
+    exit /b 1
+)
+
+echo.
+echo [4/4] Frontend build...
 call npm run build
 if errorlevel 1 (
     popd

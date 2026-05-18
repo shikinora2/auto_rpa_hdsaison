@@ -11,7 +11,7 @@ import asyncio
 import json
 import shutil
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +86,7 @@ class CleanupService:
             self._run_lock = asyncio.Lock()
 
         async with self._run_lock:
-            started_at = datetime.utcnow()
+            started_at = datetime.now(timezone.utc)
             now_ts = time.time()
 
             auth_stats = self._cleanup_auth_tokens(started_at)
@@ -97,7 +97,7 @@ class CleanupService:
             summary = {
                 "trigger": trigger,
                 "started_at": started_at.isoformat(),
-                "finished_at": datetime.utcnow().isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
                 "auth": auth_stats,
                 "files": file_stats,
                 "sessions": session_stats,
@@ -113,8 +113,8 @@ class CleanupService:
             except Exception as exc:
                 self._last_summary = {
                     "trigger": "scheduled",
-                    "started_at": datetime.utcnow().isoformat(),
-                    "finished_at": datetime.utcnow().isoformat(),
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
                     "error": str(exc),
                 }
 

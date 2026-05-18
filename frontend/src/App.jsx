@@ -201,12 +201,12 @@ function App() {
     baseMenuItems[3],
     ...(isAdmin
       ? [
-          {
-            key: 'admin-users',
-            icon: <TeamOutlined />,
-            label: 'Quản Lý User',
-          },
-        ]
+        {
+          key: 'admin-users',
+          icon: <TeamOutlined />,
+          label: 'Quản Lý User',
+        },
+      ]
       : []),
   ];
 
@@ -806,10 +806,12 @@ function App() {
                       <Button size="small"
                         type={liveRpaStatus.is_paused ? 'primary' : 'default'}
                         icon={liveRpaStatus.is_paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                        aria-label={liveRpaStatus.is_paused ? 'Tiếp tục tác vụ' : 'Tạm dừng tác vụ'}
                         onClick={handlePause} className="status-bar-ctrl-btn" />
                     </Tooltip>
                     <Tooltip title="Dừng hẳn" placement="bottomRight">
                       <Button size="small" danger icon={<StopOutlined />}
+                        aria-label="Dừng hẳn"
                         onClick={handleStop} className="status-bar-ctrl-btn" />
                     </Tooltip>
                   </>
@@ -901,7 +903,7 @@ function App() {
         placement="right"
         open={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
-        width={420}
+        size="large"
         className="help-guide-drawer"
       >
         <div className="help-guide-content">

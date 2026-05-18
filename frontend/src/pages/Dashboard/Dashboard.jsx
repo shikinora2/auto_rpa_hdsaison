@@ -286,7 +286,7 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
                 <Alert
                     type="info"
                     showIcon
-                    message="Tài khoản hiện tại không có quyền truy cập chức năng tại Dashboard"
+                    title="Tài khoản hiện tại không có quyền truy cập chức năng tại Dashboard"
                     description="Vui lòng liên hệ quản trị viên để được cấp quyền phù hợp."
                 />
             </div>
@@ -400,14 +400,14 @@ function Dashboard({ taskStatus, progress, headless, sessionStatus, onVerifySess
                             <div style={{ textAlign: 'center', marginBottom: 20 }}>
                                 {zaloSession.is_active ? (
                                     <Alert
-                                        message="Kết nối Zalo thành công"
+                                        title="Kết nối Zalo thành công"
                                         description={`Đang hoạt động với tên: ${zaloSession.zalo_name}`}
                                         type="success"
                                         showIcon
                                     />
                                 ) : (
                                     <Alert
-                                        message="Zalo hiện chưa đăng nhập"
+                                        title="Zalo hiện chưa đăng nhập"
                                         description="Vui lòng bấm nút bên dưới và quét mã QR để bắt đầu gửi tin hoặc kết bạn."
                                         type="info"
                                         showIcon

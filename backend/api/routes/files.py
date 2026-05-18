@@ -139,6 +139,11 @@ _COLUMN_ALIAS: dict = {
     'ngày sinh': 'dob', 'ngay sinh': 'dob',
     'dob': 'dob', 'date of birth': 'dob',
     'ngay sinh khach hang': 'dob', 'ngày sinh khách hàng': 'dob',
+    # product
+    'sản phẩm': 'product', 'san pham': 'product',
+    'sản phẩm (gộp)': 'product', 'san pham (gop)': 'product',
+    'san pham gop': 'product',
+    'products_joined': 'product', 'product': 'product',
 }
 
 

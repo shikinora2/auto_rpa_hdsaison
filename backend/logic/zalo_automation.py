@@ -1419,7 +1419,7 @@ class ZaloAutomation:
     
     def send_bulk_messages(self, customer_list: list, template: str, callback=None, delay: int = 3,
                           is_paused_func=None, is_stop_func=None, my_name: str = "", check_friend_status: bool = True,
-                          attachment_path: str | None = None):
+                          attachment_path: str | None = None, row_callback=None):
         """
         Gửi tin nhắn hàng loạt theo quy trình:
         1. Tìm kiếm số điện thoại
@@ -1462,6 +1462,7 @@ class ZaloAutomation:
 
             try:
                 gender_pronoun = to_gender_pronoun(customer.get('gender', ''))
+                product_value = customer.get('product') or customer.get('products_joined') or customer.get('san_pham') or ''
 
                 # Format tin nhắn
                 message = template.format(
@@ -1472,7 +1473,9 @@ class ZaloAutomation:
                     cccd=customer.get('cccd', ''),
                     dob=customer.get('dob', ''),
                     contract_id=customer.get('contract_id', ''),
-                    gender=gender_pronoun  # Sử dụng anh/chị thay vì Nam/Nữ
+                    gender=gender_pronoun,  # Sử dụng anh/chị thay vì Nam/Nữ
+                    product=product_value,
+                    san_pham=product_value,
                 )
 
                 phone = customer.get('phone', '').strip()
@@ -1482,12 +1485,15 @@ class ZaloAutomation:
                     if callback:
                         callback(f"⚠️ [{idx}/{len(customer_list)}] Bỏ qua: {name} (không có SĐT)")
                     result['failed'] += 1
-                    result['details'].append({
+                    row_res = {
                         'phone': phone,
                         'name': name,
                         'status': 'no_phone',
                         'friend_status': None
-                    })
+                    }
+                    result['details'].append(row_res)
+                    if row_callback:
+                        row_callback(row_res)
                     continue
 
                 if callback:
@@ -1514,12 +1520,15 @@ class ZaloAutomation:
 
                     if callback:
                         callback(f"✅ [{idx}/{len(customer_list)}] Thành công: {phone}{status_text}")
-                    result['details'].append({
+                    row_res = {
                         'phone': phone,
                         'name': name,
                         'status': 'success',
                         'friend_status': friend_status
-                    })
+                    }
+                    result['details'].append(row_res)
+                    if row_callback:
+                        row_callback(row_res)
                 else:
                     result['failed'] += 1
 
@@ -1529,34 +1538,43 @@ class ZaloAutomation:
                         if callback:
                             callback(f"⚠️ [{idx}/{len(customer_list)}] {phone}: {error_text}")
                         result['errors'].append(f"{phone}: {error_text}")
-                        result['details'].append({
+                        row_res = {
                             'phone': phone,
                             'name': name,
                             'status': 'not_registered',
                             'friend_status': None
-                        })
+                        }
+                        result['details'].append(row_res)
+                        if row_callback:
+                            row_callback(row_res)
                     elif error_msg == 'not_found':
                         error_text = "Không tìm thấy kết quả"
                         if callback:
                             callback(f"⚠️ [{idx}/{len(customer_list)}] {phone}: {error_text}")
                         result['errors'].append(f"{phone}: {error_text}")
-                        result['details'].append({
+                        row_res = {
                             'phone': phone,
                             'name': name,
                             'status': 'not_found',
                             'friend_status': None
-                        })
+                        }
+                        result['details'].append(row_res)
+                        if row_callback:
+                            row_callback(row_res)
                     else:
                         error_text = error_msg or "Không thể gửi tin nhắn"
                         if callback:
                             callback(f"❌ [{idx}/{len(customer_list)}] Thất bại: {phone} - {error_text}")
                         result['errors'].append(f"{phone}: {error_text}")
-                        result['details'].append({
+                        row_res = {
                             'phone': phone,
                             'name': name,
                             'status': 'failed',
                             'friend_status': friend_status
-                        })
+                        }
+                        result['details'].append(row_res)
+                        if row_callback:
+                            row_callback(row_res)
 
                 # Delay giữa các tin nhắn (thêm random vào delay)
                 if idx < len(customer_list):

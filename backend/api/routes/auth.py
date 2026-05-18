@@ -238,7 +238,7 @@ def _write_audit(db: Session, admin_user_id: int, target_user_id: int, action: s
 
 
 def _check_login_rate_limit(identity: str):
-    now = datetime.utcnow()
+    now = _utcnow()
     records = LOGIN_ATTEMPTS.get(identity, [])
     records = [ts for ts in records if (now - ts).total_seconds() <= LOGIN_WINDOW_SECONDS]
     LOGIN_ATTEMPTS[identity] = records
@@ -247,7 +247,7 @@ def _check_login_rate_limit(identity: str):
 
 
 def _record_login_failure(identity: str):
-    now = datetime.utcnow()
+    now = _utcnow()
     records = LOGIN_ATTEMPTS.get(identity, [])
     records.append(now)
     LOGIN_ATTEMPTS[identity] = records
@@ -347,7 +347,7 @@ def refresh_token(
     if not token_row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    now = datetime.utcnow()
+    now = _utcnow()
     consumed = (
         db.query(RefreshToken)
         .filter(
@@ -381,7 +381,7 @@ def logout(request: Request, response: Response, current_user=Depends(get_curren
         db.query(RefreshToken).filter(
             RefreshToken.token_hash == token_hash,
             RefreshToken.revoked_at.is_(None),
-        ).update({"revoked_at": datetime.utcnow()}, synchronize_session=False)
+        ).update({"revoked_at": _utcnow()}, synchronize_session=False)
         db.commit()
 
     _clear_auth_cookies(response)
@@ -411,7 +411,7 @@ def change_password(
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user.id,
         RefreshToken.revoked_at.is_(None),
-    ).update({"revoked_at": datetime.utcnow()}, synchronize_session=False)
+    ).update({"revoked_at": _utcnow()}, synchronize_session=False)
     db.commit()
 
     return {"status": "success", "message": "Đổi mật khẩu thành công"}
@@ -451,7 +451,7 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
 @router.post("/reset-password")
 def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
     token_hash = sha256_text(payload.reset_token)
-    now = datetime.utcnow()
+    now = _utcnow()
     consumed = (
         db.query(PasswordResetToken)
         .filter(
@@ -482,7 +482,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.query(RefreshToken).filter(
         RefreshToken.user_id == user.id,
         RefreshToken.revoked_at.is_(None),
-    ).update({"revoked_at": datetime.utcnow()}, synchronize_session=False)
+    ).update({"revoked_at": _utcnow()}, synchronize_session=False)
     db.commit()
 
     return {"status": "success", "message": "Reset mật khẩu thành công"}

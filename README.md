@@ -1,4 +1,4 @@
-﻿# automation marketing (Web)
+# automation marketing (Web)
 
 Hệ thống automation marketing với kiến trúc Web:
 - Backend: FastAPI + Playwright
@@ -21,10 +21,7 @@ auto_rpa_hdsaison/
 ├── frontend/                # React app
 ├── app_data/                # Dữ liệu runtime (config/session/history)
 ├── downloads_contracts/     # File tải về
-├── Dockerfile
-├── docker-compose.yml
-├── test.bat                 # Chạy test/lint/build 1 lệnh (Windows)
-└── DEPLOY_DOCKER_UBUNTU.md
+└── test.bat                 # Chạy test/lint/build 1 lệnh (Windows)
 ```
 
 ## Chạy local (Windows)
@@ -44,24 +41,10 @@ test.bat
 `test.bat` sẽ chạy lần lượt:
 - Backend: `pytest`
 - Frontend: `npm run lint`
+- Frontend: `npm run test:run`
 - Frontend: `npm run build`
 
 Fail-fast: bước nào lỗi sẽ dừng ngay với exit code != 0.
-
-## Deploy chuẩn Docker trên Ubuntu VPS
-
-### Chạy nhanh
-
-```bash
-cp backend/.env.example backend/.env
-mkdir -p app_data downloads_contracts
-docker compose build
-docker compose up -d
-```
-
-API endpoint: `http://<VPS_IP>:8000`
-
-Hướng dẫn đầy đủ: xem `DEPLOY_DOCKER_UBUNTU.md`.
 
 ## Cấu hình môi trường
 
@@ -103,8 +86,6 @@ Backup định kỳ 2 thư mục:
 - `app_data/`
 - `downloads_contracts/`
 
-Khi chạy Docker, 2 thư mục này đã được mount volume từ host.
-
 ## Lưu ý bảo mật
 
 - Không commit dữ liệu nhạy cảm trong `app_data/`
@@ -114,7 +95,6 @@ Khi chạy Docker, 2 thư mục này đã được mount volume từ host.
 ## Tài liệu liên quan
 
 - `GITIGNORE_GUIDE.md`
-- `DEPLOY_DOCKER_UBUNTU.md`
 
 ## 📄 License
 

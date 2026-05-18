@@ -740,6 +740,12 @@ async def run_send_messages_task(user_id, customers, message_template, check_fri
         def is_stop():
             return zalo_state["stop_requested"]
 
+        def row_callback(row_result):
+            asyncio.run_coroutine_threadsafe(
+                manager.broadcast_status("zalo_row_update", {"task": "send_messages", "results": {"details": [row_result]}}),
+                loop
+            )
+
         def do_send():
             from logic.zalo_automation import ZaloAutomation
 
@@ -780,6 +786,7 @@ async def run_send_messages_task(user_id, customers, message_template, check_fri
                     my_name=zalo_state.get("zalo_name", ""),
                     check_friend_status=check_friend_status,
                     attachment_path=attachment_path,
+                    row_callback=row_callback,
                 )
             finally:
                 try:
@@ -922,6 +929,7 @@ async def run_add_friends_task(user_id, customers, greeting_template):
 
                     # Format greeting với các biến (giống working app_ui.py)
                     gender_pronoun = to_gender_pronoun(customer.get("gender", ""))
+                    product_value = customer.get("product") or customer.get("products_joined") or customer.get("san_pham") or ""
 
                     if greeting_template:
                         try:
@@ -933,7 +941,9 @@ async def run_add_friends_task(user_id, customers, greeting_template):
                                 gender=gender_pronoun,
                                 address=customer.get("address", ""),
                                 cccd=customer.get("cccd", ""),
-                                dob=customer.get("dob", "")
+                                dob=customer.get("dob", ""),
+                                product=product_value,
+                                san_pham=product_value,
                             )
                         except (KeyError, ValueError):
                             formatted_greeting = greeting_template
@@ -1000,34 +1010,45 @@ async def run_add_friends_task(user_id, customers, greeting_template):
                     except Exception:
                         pass
 
+                    row_result = None
                     if result == "already_sent":
                         already_sent_count += 1
                         msg = f"⚠️ [{i+1}/{len(customers_with_phone)}] Đã gửi lời mời trước đó: {phone}"
                         if display_name:
                             msg += f" — Zalo: {display_name}"
                         asyncio.run_coroutine_threadsafe(log_to_ws(msg, "warning"), loop)
-                        results.append({"phone": phone, "name": name, "status": "already_sent", "display_name": display_name})
+                        row_result = {"phone": phone, "name": name, "status": "already_sent", "display_name": display_name}
+                        results.append(row_result)
                     elif result == "already_friend":
                         already_friend_count += 1
                         msg = f"👥 [{i+1}/{len(customers_with_phone)}] Đã là bạn bè: {phone}"
                         if display_name:
                             msg += f" — Zalo: {display_name}"
                         asyncio.run_coroutine_threadsafe(log_to_ws(msg, "info"), loop)
-                        results.append({"phone": phone, "name": name, "status": "already_friend", "display_name": display_name})
+                        row_result = {"phone": phone, "name": name, "status": "already_friend", "display_name": display_name}
+                        results.append(row_result)
                     elif result:
                         success_count += 1
                         msg = f"✅ [{i+1}/{len(customers_with_phone)}] Kết bạn thành công: {phone}"
                         if display_name:
                             msg += f" — Zalo: {display_name}"
                         asyncio.run_coroutine_threadsafe(log_to_ws(msg, "success"), loop)
-                        results.append({"phone": phone, "name": name, "status": "success", "display_name": display_name})
+                        row_result = {"phone": phone, "name": name, "status": "success", "display_name": display_name}
+                        results.append(row_result)
                     else:
                         failed_count += 1
                         asyncio.run_coroutine_threadsafe(
                             log_to_ws(f"❌ [{i+1}/{len(customers_with_phone)}] Thất bại: {phone}", "error"),
                             loop
                         )
-                        results.append({"phone": phone, "name": name, "status": "failed", "display_name": None})
+                        row_result = {"phone": phone, "name": name, "status": "failed", "display_name": None}
+                        results.append(row_result)
+
+                    if row_result:
+                        asyncio.run_coroutine_threadsafe(
+                            manager.broadcast_status("zalo_row_update", {"task": "add_friends", "results": [row_result]}),
+                            loop
+                        )
 
                     # Delay giữa các lần kết bạn (random 2.5-3.5s giống working code)
                     if i < len(customers_with_phone) - 1:
@@ -1185,6 +1206,13 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                 already_friend_count = 0
                 results = []
 
+                def record_row_result(row_data):
+                    results.append(row_data)
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast_status("zalo_row_update", {"task": "add_friends_and_send", "results": [row_data]}),
+                        loop
+                    )
+
                 customers_with_phone = [c for c in customers if c.get("phone", "").strip()]
 
                 for i, customer in enumerate(customers_with_phone):
@@ -1205,6 +1233,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                     name = customer.get("name", "N/A")
                     contract_id = customer.get("contract_id", "")
                     gender_pronoun = to_gender_pronoun(customer.get("gender", ""))
+                    product_value = customer.get("product") or customer.get("products_joined") or customer.get("san_pham") or ""
 
                     if greeting_template:
                         try:
@@ -1216,7 +1245,9 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                                 gender=gender_pronoun,
                                 address=customer.get("address", ""),
                                 cccd=customer.get("cccd", ""),
-                                dob=customer.get("dob", "")
+                                dob=customer.get("dob", ""),
+                                product=product_value,
+                                san_pham=product_value,
                             )
                         except (KeyError, ValueError):
                             formatted_greeting = greeting_template
@@ -1232,7 +1263,9 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                             gender=gender_pronoun,
                             address=customer.get("address", ""),
                             cccd=customer.get("cccd", ""),
-                            dob=customer.get("dob", "")
+                            dob=customer.get("dob", ""),
+                            product=product_value,
+                            san_pham=product_value,
                         )
                     except (KeyError, ValueError):
                         formatted_message = message_template
@@ -1260,7 +1293,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                                 log_to_ws(f"🚫 Zalo đang giới hạn tìm kiếm/kết bạn do chống spam. {err_str}", "error"),
                                 loop
                             )
-                            results.append({
+                            record_row_result({
                                 "phone": phone,
                                 "name": name,
                                 "status": "rate_limited",
@@ -1280,7 +1313,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                             log_to_ws(f"❌ [{i+1}/{len(customers_with_phone)}] Lỗi kết bạn: {phone} — {err_str}", "error"),
                             loop
                         )
-                        results.append({"phone": phone, "name": name, "status": "error", "display_name": None})
+                        record_row_result({"phone": phone, "name": name, "status": "error", "display_name": None})
                         failed_count += 1
                         try:
                             automation.close_modal_after_add_friend()
@@ -1314,7 +1347,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                             log_to_ws(f"❌ [{i+1}/{len(customers_with_phone)}] Kết bạn thất bại: {phone}", "error"),
                             loop
                         )
-                        results.append({"phone": phone, "name": name, "status": "failed", "display_name": None})
+                        record_row_result({"phone": phone, "name": name, "status": "failed", "display_name": None})
 
                     if should_send_message:
                         try:
@@ -1345,7 +1378,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                                 log_to_ws(f"✅ [{i+1}/{len(customers_with_phone)}] Kết bạn + gửi tin thành công: {phone}", "success"),
                                 loop
                             )
-                            results.append({"phone": phone, "name": name, "status": final_status, "display_name": display_name})
+                            record_row_result({"phone": phone, "name": name, "status": final_status, "display_name": display_name})
                         else:
                             failed_count += 1
                             final_status = f"{status_prefix}_send_failed" if status_prefix else "send_failed"
@@ -1353,7 +1386,7 @@ async def run_add_friends_and_send_task(user_id, customers, greeting_template, m
                                 log_to_ws(f"⚠️ [{i+1}/{len(customers_with_phone)}] Kết bạn xong nhưng gửi tin thất bại: {phone} ({send_error or 'send_failed'})", "warning"),
                                 loop
                             )
-                            results.append({
+                            record_row_result({
                                 "phone": phone,
                                 "name": name,
                                 "status": final_status,

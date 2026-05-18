@@ -22,13 +22,13 @@ if errorlevel 1 (
 )
 
 echo [INFO] Starting Backend server...
-start "Backend Server" cmd /k "cd /d %~dp0 && call .venv\Scripts\activate && cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+start "Backend Server" cmd /k "cd /d %~dp0 && call .venv312\Scripts\activate.bat && cd backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
 echo [INFO] Waiting for Backend to start...
 timeout /t 3 /nobreak >nul
 
 echo [INFO] Starting Frontend server...
-start "Frontend Server" cmd /k "cd /d %~dp0frontend && npm run dev"
+start "Frontend Server" cmd /k "cd /d %~dp0\frontend && npm run dev"
 
 echo [INFO] Waiting for Frontend to start...
 timeout /t 5 /nobreak >nul
